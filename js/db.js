@@ -14,6 +14,8 @@ async function existenCuentas(){
 }
 
 async function cargarEstado(){
+  await cargarCatalogo();
+
   const { data: perfiles, error: e1 } = await sb.from("profiles").select("*");
   if(e1) throw e1;
   S.usuarios = perfiles || [];
@@ -22,15 +24,59 @@ async function cargarEstado(){
   if(e2) throw e2;
   S.proyectos = (proys || []).map(mapProyectoRow);
   await cargarTodoElAvance();   // sin esto, las listas y el dashboard mostrarían 0% hasta abrir cada proyecto
+  await cargarNotificaciones();
 
   const H = hoy();
   S.mes = {y: H.getFullYear(), m: H.getMonth()};
 }
 
+/* ---------- catálogo de ítems (editable, Menú → Catálogo de ítems) ---------- */
+async function cargarCatalogo(){
+  const { data: etapas, error: e1 } = await sb.from("etapas_catalogo").select("*").order("n");
+  if(e1) throw e1;
+  const { data: items, error: e2 } = await sb.from("items_catalogo").select("*")
+    .eq("activo", true).order("etapa_n").order("orden");
+  if(e2) throw e2;
+  ETAPAS = (etapas || []).map(e => ({
+    n: e.n, t: e.nombre, hito: e.hito,
+    items: (items || []).filter(i => i.etapa_n === e.n)
+      .map(i => ({id: i.id, x: i.texto, ev: i.evidencia, ap: (i.aplica_tipos && i.aplica_tipos.length) ? i.aplica_tipos : "*"}))
+  }));
+}
+
+async function actualizarEtapaCatalogoDB(n, campos){
+  const { error } = await sb.from("etapas_catalogo").update(campos).eq("n", n);
+  if(error) throw error;
+}
+
+async function crearItemCatalogoDB({id, etapaN, texto, evidencia, aplicaTipos, orden}){
+  const { error } = await sb.from("items_catalogo").insert({
+    id, etapa_n: etapaN, texto, evidencia, aplica_tipos: aplicaTipos, orden
+  });
+  if(error) throw error;
+}
+
+async function actualizarItemCatalogoDB(id, campos){
+  const { error } = await sb.from("items_catalogo").update(campos).eq("id", id);
+  if(error) throw error;
+}
+
+/* activo=false archiva (RN-3-like: nunca se borra), activo=true restaura */
+async function archivarItemCatalogoDB(id, activo){
+  const { error } = await sb.from("items_catalogo").update({activo}).eq("id", id);
+  if(error) throw error;
+}
+
+async function cargarItemsArchivadosCatalogoDB(){
+  const { data, error } = await sb.from("items_catalogo").select("*").eq("activo", false).order("etapa_n").order("id");
+  if(error) throw error;
+  return data || [];
+}
+
 function mapProyectoRow(row){
   const coordPerfil = S.usuarios.find(u => u.id === row.coordinador_id);
   return {
-    id: row.id, nombre: row.nombre, cliente: row.cliente, tipo: row.tipo, comuna: row.comuna,
+    id: row.id, nombre: row.nombre, cliente: row.cliente, tipo: row.tipo, linea: row.linea_piscina, comuna: row.comuna,
     coordinadorId: row.coordinador_id, coord: coordPerfil ? coordPerfil.nombre : "Sin asignar",
     inst: row.instalador, inicio: row.fecha_inicio, termino: row.fecha_termino,
     checklist: row.checklist, archivado: row.archivado, archivadoTs: row.archivado_ts,
@@ -40,11 +86,10 @@ function mapProyectoRow(row){
 
 /* ---------- proyectos ---------- */
 async function crearProyectoDB(datos){
-  const coordinador = S.usuarios.find(u => u.rol === "coordinador");
   const { data, error } = await sb.from("proyectos").insert({
-    nombre: datos.nombre, cliente: datos.cliente, tipo: datos.tipo, comuna: datos.comuna,
+    nombre: datos.nombre, cliente: datos.cliente, tipo: datos.tipo, linea_piscina: datos.linea || null, comuna: datos.comuna,
     instalador: datos.inst, fecha_inicio: datos.inicio, fecha_termino: datos.termino,
-    coordinador_id: coordinador ? coordinador.id : null,
+    coordinador_id: datos.coordinadorId || null,
     creado_por: S.sesion.userId,
     checklist: snapshotChecklist(datos.tipo)
   }).select().single();
@@ -168,6 +213,35 @@ async function cargarEvidencias(proyectoId){
     if(e2){ console.error(e2); return; }
     S.evCache.set(row.id, {url: signed.signedUrl, meta: {ts: row.ts, user: row.usuario_nombre, hash: row.hash_sha256}});
   }));
+}
+
+/* ---------- usuarios ---------- */
+/* Solo Jefatura puede llamarla (RLS/RPC lo verifica server-side, ver schema.sql). */
+async function asignarRolDB(usuarioId, nuevoRol){
+  const { error } = await sb.rpc("asignar_rol", {usuario_id: usuarioId, nuevo_rol: nuevoRol});
+  if(error) throw error;
+}
+
+/* ---------- notificaciones (centro de notificaciones, dentro de la app) ---------- */
+async function cargarNotificaciones(){
+  const { data, error } = await sb.from("notificaciones").select("*").order("created_at", {ascending:false}).limit(30);
+  if(error) throw error;
+  S.notificaciones = data || [];
+}
+
+/* nunca bloquea el registro del ítem si falla (mismo criterio que audit()) */
+async function notificarItemCerrado(proyectoId, mensaje){
+  try{ await sb.rpc("notificar_item_cerrado", {p_proyecto_id: proyectoId, p_mensaje: mensaje}); }
+  catch(e){ console.error("notificacion:", e); }
+}
+
+async function marcarNotificacionLeidaDB(id){
+  const { error } = await sb.from("notificaciones").update({leida:true}).eq("id", id);
+  if(error) throw error;
+}
+async function marcarTodasNotificacionesLeidasDB(){
+  const { error } = await sb.from("notificaciones").update({leida:true}).eq("leida", false);
+  if(error) throw error;
 }
 
 /* ---------- auditoría ---------- */

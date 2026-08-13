@@ -20,6 +20,71 @@ No tengo permiso para ejecutar SQL directamente en tu proyecto `djgrqunkbrppcqhf
 
 Si algo falla en este paso, avísame el mensaje de error del SQL Editor y lo corrijo de inmediato.
 
+## Usuarios: ya no hay límite de 1 por rol
+
+Antes la base de datos forzaba exactamente 1 Coordinador y 1 Jefatura (un índice único). Ahora se admiten varios
+titulares de cada rol. Cómo agregar a alguien nuevo:
+
+1. La persona entra a la pantalla de ingreso y hace clic en **"¿Nuevo aquí? Crear cuenta"** — se registra con su
+   propio correo y contraseña. Queda como **Coordinador** por defecto (es el rol seguro: nadie puede autoasignarse
+   Jefatura por registro público, lo bloquea un disparador en Postgres).
+2. Una **Jefatura ya activa** entra, abre **Menú ☰ → Usuarios**, y le sube el rol a Jefatura con un clic
+   ("Ascender a Jefatura"). Desde ahí también puede revertirlo.
+
+No hay envío automático de un correo de invitación (habría que sumar una Edge Function con la clave `service_role`,
+que deliberadamente no se usa en este proyecto — ver más abajo). Es un flujo de 2 pasos: la persona se registra,
+alguien de Jefatura la asciende.
+
+Si vienes de una versión anterior de este esquema, vuelve a ejecutar `supabase/schema.sql` completo (es seguro,
+usa `drop index if exists` / `create or replace`) para quitar el límite de 1 cuenta por rol y habilitar la función
+`asignar_rol` que usa la pantalla de Usuarios.
+
+## Catálogo de ítems: ahora editable, ya no vive en el código
+
+El checklist (las 6 etapas y sus ítems) dejó de estar escrito en `model.js`. Ahora vive en las tablas
+`etapas_catalogo` / `items_catalogo`, con una pantalla nueva en **Menú ☰ → Catálogo de ítems** (solo Jefatura) para:
+
+- Editar el texto de un ítem, si exige evidencia obligatoria y a qué tipos de proyecto aplica.
+- Agregar ítems nuevos a cualquier etapa.
+- "Quitar" un ítem del catálogo (lo archiva, no lo borra — se puede restaurar desde "Ítems archivados").
+- Renombrar el nombre/hito de una etapa (las 6 etapas en sí son fijas: sus fechas límite, RN-5, dependen de su número).
+
+**Los proyectos que ya existen no se ven afectados por estos cambios**: cada proyecto guarda su propio checklist
+(`proyectos.checklist`) al crearse, así que editar el catálogo solo cambia el checklist de los proyectos *nuevos*
+(o de uno existente si Jefatura le cambia el tipo, RN-12).
+
+Vuelve a ejecutar `supabase/schema.sql` completo para crear estas tablas — trae una semilla con el catálogo
+original de 29 ítems, así que no pierdes nada al actualizar.
+
+## Notificaciones: campanita dentro de la app (sin correo)
+
+Hay un centro de notificaciones (🔔 en la barra superior) con dos fuentes:
+
+- **Alertas de etapas** (vencida / por vencer): se recalculan en vivo, igual que las alertas del dashboard, pero
+  ahora visibles a cualquier rol desde cualquier pantalla, no solo dentro del panel Dashboard.
+- **Actividad**: un evento real y persistente por cada ítem que un Coordinador cierra, dirigido a **todas** las
+  cuentas Jefatura. Se puede marcar como leída (una por una o todas juntas) y queda guardado en la tabla
+  `notificaciones`.
+
+Deliberadamente **no hay correo ni push**: eso exigiría una Edge Function con su propia `service_role` y una cuenta
+en un proveedor de correo transaccional (Resend, etc.), infraestructura que este proyecto evita a propósito (ver
+"Dónde viven los datos ahora" más abajo). Tampoco hay cron: todo se recalcula/recarga al entrar a la app o al abrir
+la campanita, así que puede haber unas horas de desfase si nadie tiene la app abierta. Si más adelante quieres
+correo real, es la siguiente pieza natural a construir.
+
+Vuelve a ejecutar `supabase/schema.sql` completo para crear la tabla `notificaciones` y la función
+`notificar_item_cerrado`.
+
+## Tipos de proyecto: ahora solo Piscina y Tiny House
+
+El selector de "Tipo de proyecto" al crear/editar ya no muestra Modular, Prefabricada ni Modular Industrial — el
+negocio hoy solo trabaja Piscina y Tiny House. Cuando el tipo es **Piscina**, aparece un segundo selector,
+**Línea**, con las opciones **SWIM** y **SMARTPOOLS**. No cambia el checklist (las mismas reglas de "solo
+piscinas" siguen aplicando a ambas líneas); es solo una marca/línea de producto que ahora se ve como etiqueta en
+las tarjetas, el detalle y la tabla de Jefatura.
+
+Vuelve a ejecutar `supabase/schema.sql` completo para agregar la columna `linea_piscina` a `proyectos`.
+
 ## Qué cambió respecto a la versión local: roles reales
 
 La especificación (§2) es más estricta de lo que tenía la versión anterior, y ahora se aplica de verdad — no solo en la interfaz, sino en la base de datos, así que no se puede saltar:

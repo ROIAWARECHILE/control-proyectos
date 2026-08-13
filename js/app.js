@@ -6,8 +6,10 @@ document.getElementById("ov").onclick = e => { if(e.target.id === "ov") cerrarMo
 document.addEventListener("click", e => {
   const menu = document.getElementById("menu");
   if(menu && menu.classList.contains("on") && !menu.contains(e.target)) cerrarMenu();
+  const noti = document.getElementById("notipanel");
+  if(noti && S.notiAbierta && !noti.contains(e.target)) cerrarNotificaciones();
 });
-document.addEventListener("keydown", e => { if(e.key === "Escape"){ cerrarModal(); cerrarMenu(); } });
+document.addEventListener("keydown", e => { if(e.key === "Escape"){ cerrarModal(); cerrarMenu(); cerrarNotificaciones(); } });
 
 (async function init(){
   conectarEntradasArchivo();

@@ -6,54 +6,19 @@
    ===================================================================== */
 
 const CATALOGO_VERSION = 1;
-const TIPOS = ["Piscina","Modular","Prefabricada","Modular Industrial","Tiny House"];
-const SOLO_PISCINA = ["Piscina"];
+const TIPOS = ["Piscina","Tiny House"];
+const LINEAS_PISCINA = ["SWIM","SMARTPOOLS"];   // solo aplica cuando tipo === "Piscina"
 
 /* Catálogo de etapas e ítems.
    ev: 'obligatoria' -> no se puede cerrar sin evidencia (RN-1)
-   ap: tipos a los que aplica ('*' = todos)                              */
-const ETAPAS = [
-{n:1, t:"Cinco días antes del inicio", hito:"T-5 días", items:[
-  {id:"1.1", x:"Validar correcta creación de Grupo WhatsApp con Cliente y Equipo Interno", ev:"opcional", ap:"*"},
-  {id:"1.2", x:"Validar entrega de Información General en el grupo WhatsApp", ev:"opcional", ap:"*"},
-  {id:"1.3", x:"Validar inspección digital del terreno", ev:"opcional", ap:"*"},
-  {id:"1.4", x:"Confirmación e información de instaladores externos", ev:"opcional", ap:"*"},
-]},
-{n:2, t:"Un día antes del inicio", hito:"T-1 día", items:[
-  {id:"2.1", x:"Confirmación de información de colaboradores externos (retro, áridos, pluma, otros)", ev:"opcional", ap:"*"},
-  {id:"2.2", x:"Llamado Día 0 al cliente (previo al inicio de actividades del Día 1)", ev:"obligatoria", ap:"*"},
-  {id:"2.3", x:"Verificar entrega de cuentas de externos", ev:"opcional", ap:"*"},
-  {id:"2.4", x:"Firma digital del cliente para el inicio de actividades (documento tipo)", ev:"obligatoria", ap:"*"},
-]},
-{n:3, t:"Inicio del proyecto", hito:"Día 1", items:[
-  {id:"3.1", x:"Validar lay-out: ubicación de montaje, orientación, alineación, deslindes, niveles y ubicación de equipos", ev:"obligatoria", ap:"*"},
-  {id:"3.2", x:"Validar zona de acopio de material o escombro y accesos para maquinaria", ev:"obligatoria", ap:"*"},
-]},
-{n:4, t:"Durante el proyecto", hito:"Ejecución", items:[
-  {id:"4.1", x:"Informar primer avance del proyecto", ev:"obligatoria", ap:"*"},
-  {id:"4.2", x:"Informar segundo avance del proyecto", ev:"obligatoria", ap:"*"},
-  {id:"4.3", x:"Informar tercer avance del proyecto", ev:"obligatoria", ap:"*"},
-  {id:"4.4", x:"Informar la entrega del proyecto", ev:"obligatoria", ap:"*"},
-]},
-{n:5, t:"Término del proyecto (con instalador)", hito:"Cierre técnico", items:[
-  {id:"5.1", x:"Verificar nivelación final del montaje", ev:"obligatoria", ap:"*"},
-  {id:"5.2", x:"Verificar rellenos perimetrales y escala", ev:"obligatoria", ap:"*"},
-  {id:"5.3", x:"Verificar montaje de equipos", ev:"obligatoria", ap:SOLO_PISCINA},
-  {id:"5.4", x:"Verificar montaje de tensores", ev:"obligatoria", ap:SOLO_PISCINA},
-  {id:"5.5", x:"Revisión eléctrica general", ev:"obligatoria", ap:"*"},
-  {id:"5.6", x:"Verificación de conexión de neutro, fase y tierra del tablero programador", ev:"obligatoria", ap:SOLO_PISCINA},
-  {id:"5.7", x:"Verificación de conexión de neutro, fase y tierra de la alimentación eléctrica de la propiedad del cliente", ev:"obligatoria", ap:"*"},
-  {id:"5.8", x:"Verificación de funcionamiento del sistema base: tablero programador, bomba y filtro", ev:"obligatoria", ap:SOLO_PISCINA},
-  {id:"5.9", x:"Verificación de funcionamiento de adicionales, si aplican: clorador, ionizador, bomba de calor, cascada, otros", ev:"opcional", ap:SOLO_PISCINA},
-  {id:"5.10", x:"Verificar ausencia de filtraciones", ev:"obligatoria", ap:SOLO_PISCINA},
-  {id:"5.11", x:"Verificar presión de trabajo del sistema", ev:"obligatoria", ap:SOLO_PISCINA},
-]},
-{n:6, t:"Entrega del proyecto (con cliente)", hito:"Recepción", items:[
-  {id:"6.1", x:"Capacitación al cliente por parte del líder de terreno", ev:"obligatoria", ap:"*"},
-  {id:"6.2", x:"Entrega de manuales y garantías", ev:"obligatoria", ap:"*"},
-  {id:"6.3", x:"Validar orden y limpieza del área de trabajo", ev:"obligatoria", ap:"*"},
-  {id:"6.4", x:"Obtener recepción conforme del cliente", ev:"obligatoria", ap:"*"},
-]}];
+   ap: tipos a los que aplica ('*' = todos)
+   Editable desde Menú → Catálogo de ítems (solo Jefatura): vive en las
+   tablas etapas_catalogo/items_catalogo y se carga en tiempo de ejecución
+   vía cargarCatalogo() (db.js), llamada desde cargarEstado(). Nada aquí
+   se evalúa antes del login, así que esta lista arranca vacía sin riesgo.
+   Los proyectos ya creados no se ven afectados por ediciones futuras:
+   cada uno guarda su propia copia (snapshotChecklist) al crearse. */
+let ETAPAS = [];
 
 /* ---------- estado global de la aplicación ---------- */
 const S = {
@@ -70,6 +35,8 @@ const S = {
   mes: null,             // {y, m}
   evCache: new Map(),    // evidenciaId -> {url, meta} del proyecto abierto
   auditProy: [],         // auditoría del proyecto abierto
+  notificaciones: [],    // notificaciones propias (tabla notificaciones), solo eventos ("ítem cerrado")
+  notiAbierta: false,    // panel de la campanita
 };
 
 /* ---------- utilidades ---------- */

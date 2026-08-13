@@ -18,12 +18,42 @@ function abrirModal(html, ancho){
 }
 function cerrarModal(){ document.getElementById("ov").classList.remove("on"); }
 function cerrarMenu(){ document.getElementById("menu")?.classList.remove("on"); }
-function toggleMenu(ev){ ev.stopPropagation(); document.getElementById("menu").classList.toggle("on"); }
+function toggleMenu(ev){ ev.stopPropagation(); cerrarNotificaciones(); document.getElementById("menu").classList.toggle("on"); }
 
 const esJefatura = () => S.sesion?.rol === "jefatura";
 const RO = esJefatura;   // checklist de solo lectura para Jefatura
 
 /* ---------- topbar ---------- */
+/* alertas de etapas (recalculadas, todo proyecto activo visible) + notificaciones no leídas (eventos) */
+function totalNotificaciones(){
+  return alertas(activos()).length + S.notificaciones.filter(n => !n.leida).length;
+}
+
+function panelNotificaciones(){
+  const al = alertas(activos());
+  const sinLeer = S.notificaciones.filter(n => !n.leida).length;
+  const vacio = !al.length && !S.notificaciones.length;
+  return `
+  <div class="menu notipanel ${S.notiAbierta?'on':''}" id="notipanel">
+    <div class="notihd"><b>Notificaciones</b>
+      ${sinLeer ? `<button class="linkbtn" onclick="marcarTodasNotificacionesLeidas()">Marcar todo leído</button>` : ""}
+    </div>
+    ${vacio ? `<div class="notiempty">Sin novedades por ahora.</div>` : `
+      ${al.length ? `<div class="notigrp">Alertas de etapas</div>
+        ${al.slice(0,8).map(a => `
+          <button class="notirow" onclick="cerrarNotificaciones();abrir('${a.p.id}',${a.e.n})">
+            <span class="ic ic-${a.sev}">!</span>
+            <span><b>${esc(a.p.nombre)}</b> — ${esc(a.txt)}</span>
+          </button>`).join("")}` : ""}
+      ${S.notificaciones.length ? `<div class="notigrp">Actividad</div>
+        ${S.notificaciones.slice(0,15).map(n => `
+          <button class="notirow ${n.leida?'':'sinleer'}" onclick="abrirNotificacion(${n.id},'${n.proyecto_id||''}')">
+            <span>${esc(n.mensaje)}</span><small>${fts(n.created_at)}</small>
+          </button>`).join("")}` : ""}
+    `}
+  </div>`;
+}
+
 function renderTopbar(){
   const T = document.getElementById("topbar");
   if(!S.sesion){
@@ -35,14 +65,21 @@ function renderTopbar(){
       <button class="${S.panel==='proyectos'?'on':''}" onclick="cambiarPanel('proyectos')">Mis proyectos</button>
       <button class="${S.panel==='dashboard'?'on':''}" onclick="cambiarPanel('dashboard')">Dashboard</button>
     </div>`;
+  const totalNoti = totalNotificaciones();
   T.innerHTML = `
     <div class="logo"><span>◈</span> Control de Proyectos</div>
     <div class="sp"></div>
     ${sw}
     <div class="who"><b>${esc(S.sesion.nombre)}</b><span>${esJefatura() ? "Jefatura · supervisión" : "Coordinador de Proyectos"}</span></div>
+    <button class="menuBtn" title="Notificaciones" onclick="toggleNotificaciones(event)" style="position:relative">
+      🔔${totalNoti ? `<span class="notidot">${totalNoti>9?'9+':totalNoti}</span>` : ""}
+    </button>
+    ${panelNotificaciones()}
     <button class="menuBtn" title="Menú" onclick="toggleMenu(event)">☰</button>
     <div class="menu" id="menu">
       <button onclick="verArchivados()">Proyectos archivados<small>Eliminados de forma lógica, recuperables</small></button>
+      ${esJefatura() ? `<button onclick="verUsuarios()">Usuarios<small>Ver cuentas y asignar roles</small></button>` : ""}
+      ${esJefatura() ? `<button onclick="verCatalogo()">Catálogo de ítems<small>Editar el checklist de los proyectos nuevos</small></button>` : ""}
       <div class="sep"></div>
       <button onclick="exportarRespaldo()">Exportar copia<small>Descarga en JSON lo que puedes ver</small></button>
       <div class="sep"></div>
@@ -59,6 +96,8 @@ function render(){
   if(!S.hayCuentas)                return vistaSetup();
   if(!S.sesion)                   return vistaLogin();
   if(S.pantalla === "archivados") return vistaArchivados();
+  if(S.pantalla === "usuarios")   return vistaUsuarios();
+  if(S.pantalla === "catalogo")   return vistaCatalogo();
   if(S.pantalla === "acta")       return vistaActa();
   if(S.abierto)                   return vistaDetalle();
   if(esJefatura() || S.panel === "dashboard") return vistaJefatura();
@@ -116,8 +155,28 @@ function vistaLogin(){
     <div id="authMsg" class="authmsg"></div>
     <button class="btn p" id="liBtn" style="width:100%;padding:12px" onclick="ingresar()">Ingresar</button>
     <p style="text-align:center;margin:14px 0 0"><button class="linkbtn" onclick="olvideContrasena()">¿Olvidaste tu contraseña?</button></p>
+    <p style="text-align:center;margin:8px 0 0"><button class="linkbtn" onclick="abrirCrearCuenta()">¿Nuevo aquí? Crear cuenta</button></p>
   </div></div>`;
   setTimeout(() => document.getElementById("liEmail")?.focus(), 60);
+}
+
+/* ---------- crear cuenta propia (tras el arranque inicial) ---------- */
+function abrirCrearCuenta(){
+  abrirModal(`
+    <h3>Crear cuenta</h3>
+    <p class="q">Quedas como Coordinador de Proyectos. Si corresponde, una Jefatura ya activa puede subirte
+    el rol desde Menú → Usuarios una vez que ingreses.</p>
+    <div class="fgrp"><span class="lab">Tu nombre</span><input type="text" id="ccNom" placeholder="Ej: Yerko Ardiles"></div>
+    <div class="fgrp"><span class="lab">Tu correo</span><input type="text" id="ccEmail" placeholder="tu@correo.cl"></div>
+    <div class="f2">
+      <div class="fgrp"><span class="lab">Contraseña (mín. 6 caracteres)</span><input type="password" id="ccPass" autocomplete="new-password"></div>
+      <div class="fgrp"><span class="lab">Repetir contraseña</span><input type="password" id="ccPass2" autocomplete="new-password"></div>
+    </div>
+    <div id="ccMsg" class="authmsg"></div>
+    <div class="mact">
+      <button class="btn g" onclick="cerrarModal()">Cancelar</button>
+      <button class="btn p" id="ccBtn" onclick="crearCuentaPropia()">Crear cuenta</button></div>`);
+  setTimeout(() => document.getElementById("ccNom")?.focus(), 60);
 }
 
 /* ---------- pantalla que llega desde el enlace de recuperación ---------- */
@@ -264,7 +323,7 @@ function fichaProyecto(p,a,b){
     </div>
     <h3>${esc(p.nombre)}</h3>
     <div class="cl">${esc(p.cliente)} · ${esc(p.comuna)}</div>
-    <span class="tag">${esc(p.tipo)}</span>${f?`<span class="fase ${f.c}">${f.t}</span>`:''}
+    <span class="tag">${esc(p.tipo)}</span>${p.linea?`<span class="tag">${esc(p.linea)}</span>`:''}${f?`<span class="fase ${f.c}">${f.t}</span>`:''}
     <div style="margin-top:13px"><div class="bar"><b style="width:${t}%;background:${col}"></b></div>
     <div class="pct">${t}% · ${sig?`Etapa ${sig.n}: ${esc(sig.t)}`:"Checklist cerrado"}</div></div>
     <div class="foot"><span>${fdate(p.inicio)} – ${fdate(p.termino)}</span><span><span class="dot s-${st.k}"></span>${st.txt}</span></div>
@@ -300,7 +359,7 @@ function vistaJefatura(){
     </tr></thead><tbody>
     ${lista.map(p => { const st = estado(p); return `<tr onclick="abrir('${p.id}')">
       <td><div class="pname">${esc(p.nombre)}</div><div class="pmeta">${esc(p.cliente)} · ${esc(p.comuna)}</div></td>
-      <td><span class="tag">${esc(p.tipo)}</span></td>
+      <td><span class="tag">${esc(p.tipo)}</span>${p.linea?` <span class="tag">${esc(p.linea)}</span>`:''}</td>
       <td class="hideM"><div style="font-size:13px">${fdate(p.inicio)} – ${fdate(p.termino)}</div><div class="pmeta">Coord. ${esc(p.coord)}</div></td>
       <td><div class="mini">${p.checklist.etapas.map(e => { const v = pctEtapa(p,e);
         return `<i class="${v===100?'full':''}" title="Etapa ${e.n}: ${v}%"><b style="width:${v}%"></b></i>`; }).join("")}</div></td>
@@ -333,6 +392,7 @@ function vistaDetalle(){
     <div class="info"><h2>${esc(p.nombre)}${ro ? '<span class="rochip">SOLO LECTURA</span>' : ''}</h2>
       <div class="pmeta">${esc(p.cliente)} · ${esc(p.comuna)} · ${p.id} · Coord. ${esc(p.coord)}</div>
       <div style="margin-top:8px"><span class="tag">${esc(p.tipo)}</span>
+      ${p.linea?`<span class="tag">${esc(p.linea)}</span>`:''}
       <span class="tag">Instalador: ${esc(p.inst)}</span>
       <span class="tag">${fdate(p.inicio)} – ${fdate(p.termino)}</span></div></div>
     <div style="min-width:190px"><div class="bar" style="height:10px"><b style="width:${t}%"></b></div>
@@ -399,7 +459,10 @@ function etiquetaAccion(a){
     ingreso:"ingresó a la plataforma", salida:"cerró sesión",
     ingreso_fallido:"intento de ingreso fallido", pin_restablecido:"restableció un PIN",
     configuracion_inicial:"configuración inicial", respaldo_exportado:"exportó un respaldo",
-    respaldo_importado:"importó un respaldo",
+    respaldo_importado:"importó un respaldo", rol_cambiado:"cambió el rol de un usuario",
+    catalogo_etapa_editada:"editó una etapa del catálogo", catalogo_item_creado:"creó un ítem del catálogo",
+    catalogo_item_editado:"editó un ítem del catálogo", catalogo_item_archivado:"quitó un ítem del catálogo",
+    catalogo_item_restaurado:"restauró un ítem del catálogo",
   })[a] || a;
 }
 
@@ -458,6 +521,49 @@ function vistaArchivados(){
       <button class="evbtn" onclick="restaurarProyecto('${p.id}')">Restaurar</button>
     </div>`).join("")}</div>`
     : `<div class="card empty">No hay proyectos archivados.</div>`}`;
+}
+
+/* ---------- USUARIOS (Jefatura) ---------- */
+function vistaUsuarios(){
+  const lista = [...S.usuarios].sort((a,b) => a.nombre.localeCompare(b.nombre));
+  app.innerHTML = `
+  <button class="back" onclick="S.pantalla=null;render()">‹ Volver</button>
+  <div class="ph"><div><h1>Usuarios</h1>
+    <p class="sub" style="margin:0">${lista.length} cuenta${lista.length===1?'':'s'} · Coordinador y Jefatura pueden tener varios titulares.</p></div>
+    <button class="btn p" onclick="abrirInvitarUsuario()">Agregar usuario</button></div>
+  <div class="card">${lista.map(u => `
+    <div class="alrow" style="cursor:default">
+      <div style="flex:1"><b>${esc(u.nombre)}</b> <span class="tag">${u.rol === "jefatura" ? "Jefatura" : "Coordinador"}</span>
+        ${u.id === S.sesion.userId ? '<small>Esta es tu cuenta</small>' : ''}
+        ${!u.activo ? '<small style="color:var(--bad,#d8453c)">Cuenta inactiva</small>' : ''}</div>
+      ${u.rol === "coordinador"
+        ? `<button class="evbtn" onclick="cambiarRolUsuario('${u.id}','jefatura')">Ascender a Jefatura</button>`
+        : `<button class="evbtn" onclick="cambiarRolUsuario('${u.id}','coordinador')">Pasar a Coordinador</button>`}
+    </div>`).join("")}</div>`;
+}
+
+/* ---------- CATÁLOGO DE ÍTEMS (Jefatura) ---------- */
+function vistaCatalogo(){
+  app.innerHTML = `
+  <button class="back" onclick="S.pantalla=null;render()">‹ Volver</button>
+  <div class="ph"><div><h1>Catálogo de ítems</h1>
+    <p class="sub" style="margin:0">Se usa para armar el checklist de los proyectos nuevos y al cambiar el tipo de
+    un proyecto existente (RN-12). Los proyectos ya creados no cambian: cada uno guarda su propia copia.</p></div>
+    <button class="btn g" onclick="verItemsArchivadosCatalogo()">Ítems archivados</button></div>
+  ${ETAPAS.map(e => `
+    <div class="card" style="margin-bottom:14px">
+      <div class="hd">
+        <span style="flex:1">Etapa ${e.n} · ${esc(e.t)} <span class="tag">${esc(e.hito)}</span></span>
+        <button class="evbtn" onclick="formEtapaCatalogo(${e.n})">✎ Editar etapa</button>
+      </div>
+      ${e.items.map(i => `
+        <div class="alrow" onclick="formItemCatalogo('${i.id}',${e.n})">
+          <div style="flex:1"><b>${esc(i.id)}</b> ${esc(i.x)}
+            ${i.ev==="obligatoria"?'<span class="req">Requiere evidencia</span>':''}
+            ${i.ap!=="*"?`<span class="only">Solo ${esc(i.ap.join(", "))}</span>`:''}</div>
+        </div>`).join("")}
+      <div class="alrow" style="cursor:pointer;color:var(--brand);font-weight:650" onclick="formItemCatalogo(null,${e.n})">+ Agregar ítem a esta etapa</div>
+    </div>`).join("")}`;
 }
 
 /* ---------- ACTA DE RECEPCIÓN ---------- */

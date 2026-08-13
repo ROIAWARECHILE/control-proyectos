@@ -39,10 +39,12 @@ function editarProyecto(id, ev){ if(ev) ev.stopPropagation(); formProyecto(id); 
 function formProyecto(id){
   const p = id ? S.proyectos.find(x => x.id === id) : null;
   const H = hoy();
-  const v = p || {nombre:"", cliente:"", tipo:TIPOS[0], comuna:"", inst:"",
+  const v = p || {nombre:"", cliente:"", tipo:TIPOS[0], linea:LINEAS_PISCINA[0], comuna:"", inst:"",
                   inicio: ymd(H), termino: ymd(addD(H,10))};
   const cerrados = p ? itemsDe(p).filter(i => p.av[i.id]?.ok).length : 0;
   const puedeFechasTipo = esJefatura();   // §2: el Coordinador no edita fechas ni tipo
+  const coordinadores = S.usuarios.filter(u => u.rol === "coordinador");
+  const coordActual = p ? p.coordinadorId : (coordinadores[0]?.id || "");
 
   abrirModal(`
     <h3>${p ? `Editar proyecto ${p.id}` : "Crear proyecto"}</h3>
@@ -54,8 +56,14 @@ function formProyecto(id){
 
       <div style="grid-column:1/-1"><span class="lab">Tipo de proyecto ${puedeFechasTipo?'*':''}</span>
         ${puedeFechasTipo
-          ? `<select id="fTipo">${TIPOS.map(t => `<option${t===v.tipo?" selected":""}>${t}</option>`).join("")}</select>`
+          ? `<select id="fTipo" onchange="document.getElementById('fLineaWrap').style.display = this.value==='Piscina' ? 'block' : 'none'">${TIPOS.map(t => `<option${t===v.tipo?" selected":""}>${t}</option>`).join("")}</select>`
           : `<input type="text" value="${esc(v.tipo)}" disabled title="Solo Jefatura puede cambiar el tipo de proyecto">`}
+      </div>
+      <div style="grid-column:1/-1;display:${v.tipo==='Piscina'?'block':'none'}" id="fLineaWrap">
+        <span class="lab">Línea ${puedeFechasTipo?'*':''}</span>
+        ${puedeFechasTipo
+          ? `<select id="fLinea">${LINEAS_PISCINA.map(l => `<option${l===v.linea?" selected":""}>${l}</option>`).join("")}</select>`
+          : `<input type="text" value="${esc(v.linea || '—')}" disabled title="Solo Jefatura puede cambiar la línea">`}
       </div>
       <div><span class="lab">Fecha de inicio ${puedeFechasTipo?'*':''}</span>
         ${puedeFechasTipo ? `<input type="date" id="fIni" value="${v.inicio}">`
@@ -63,6 +71,14 @@ function formProyecto(id){
       <div><span class="lab">Fecha de término ${puedeFechasTipo?'*':''}</span>
         ${puedeFechasTipo ? `<input type="date" id="fFin" value="${v.termino}">`
                           : `<input type="text" value="${fdate(v.termino)}" disabled>`}</div>
+
+      <div style="grid-column:1/-1"><span class="lab">Coordinador a cargo ${puedeFechasTipo?'*':''}</span>
+        ${puedeFechasTipo
+          ? (coordinadores.length
+              ? `<select id="fCoord">${coordinadores.map(u => `<option value="${u.id}"${u.id===coordActual?" selected":""}>${esc(u.nombre)}</option>`).join("")}</select>`
+              : `<input type="text" value="Aún no hay coordinadores registrados" disabled>`)
+          : `<input type="text" value="${esc(p?.coord || "Sin asignar")}" disabled title="Solo Jefatura puede reasignar el coordinador">`}
+      </div>
 
       <div><span class="lab">Cliente</span><input type="text" id="fCli" value="${esc(v.cliente==="Por definir"?"":v.cliente)}" placeholder="Opcional"></div>
       <div><span class="lab">Comuna / ubicación</span><input type="text" id="fCom" value="${esc(v.comuna==="—"?"":v.comuna)}" placeholder="Opcional"></div>
@@ -89,11 +105,14 @@ async function guardarProyecto(id){
   const nom = g("fNom");
   if(!nom) return err("Ingresa el nombre del proyecto.");
   const puedeFechasTipo = esJefatura();
-  let ini, fin, tipo;
+  let ini, fin, tipo, coordinadorId, linea;
   if(puedeFechasTipo){
     ini = g("fIni"); fin = g("fFin"); tipo = g("fTipo");
     if(!ini || !fin) return err("Ingresa las fechas de inicio y término.");
     if(fin < ini) return err("La fecha de término no puede ser anterior a la de inicio.");
+    coordinadorId = document.getElementById("fCoord")?.value || null;
+    linea = tipo === "Piscina" ? g("fLinea") : null;
+    if(tipo === "Piscina" && !linea) return err("Selecciona la línea: SWIM o SMARTPOOLS.");
   }
 
   btn.disabled = true; btn.textContent = "Guardando…";
@@ -108,8 +127,16 @@ async function guardarProyecto(id){
         actualizado = await cambiarTipoProyectoDB(p, tipo);
       }
       const camposComunes = {nombre:nom, cliente:g("fCli")||"Por definir", comuna:g("fCom")||"—", instalador:g("fInst")||"Por asignar"};
-      if(puedeFechasTipo){ camposComunes.fecha_inicio = ini; camposComunes.fecha_termino = fin; }
+      if(puedeFechasTipo){
+        camposComunes.fecha_inicio = ini; camposComunes.fecha_termino = fin;
+        camposComunes.coordinador_id = coordinadorId; camposComunes.linea_piscina = linea;
+      }
       if(puedeFechasTipo && (ini !== p.inicio || fin !== p.termino)) cambios.push(`fechas ${ini} al ${fin}`);
+      if(puedeFechasTipo && coordinadorId !== p.coordinadorId){
+        const nuevo = S.usuarios.find(u => u.id === coordinadorId);
+        cambios.push(`coordinador ${p.coord} → ${nuevo ? nuevo.nombre : "Sin asignar"}`);
+      }
+      if(puedeFechasTipo && linea !== p.linea) cambios.push(`línea ${p.linea || "—"} → ${linea || "—"}`);
       actualizado = await actualizarProyectoDB(id, camposComunes);
 
       fusionarProyecto(p, actualizado);
@@ -118,8 +145,8 @@ async function guardarProyecto(id){
       if(puedeFechasTipo) S.mes = {y: d(p.inicio).getFullYear(), m: d(p.inicio).getMonth()};
       if(S.abierto === p.id) await Promise.all([cargarChecklist(p.id), cargarEvidencias(p.id), cargarAuditoria(p.id)]);
     }else{
-      const p = await crearProyectoDB({nombre:nom, cliente:g("fCli")||"Por definir", tipo,
-        comuna:g("fCom")||"—", inst:g("fInst")||"Por asignar", inicio:ini, termino:fin});
+      const p = await crearProyectoDB({nombre:nom, cliente:g("fCli")||"Por definir", tipo, linea,
+        comuna:g("fCom")||"—", inst:g("fInst")||"Por asignar", inicio:ini, termino:fin, coordinadorId});
       S.proyectos.push(p);
       await audit("proyecto_creado", `${p.nombre} (${p.tipo}), ${itemsDe(p).length} ítems de checklist`, p.id);
       cerrarModal(); toast(`Proyecto ${p.id} creado con ${itemsDe(p).length} ítems de checklist`);
@@ -291,6 +318,7 @@ async function confirmarItem(){
     p.av[TMP.itemId] = {ok:true, ts:ahora, user:S.sesion.nombre, nota, evidenciaId, geo};
     await audit("item_cerrado", `Ítem ${TMP.itemId}${TMP.conPrevias ? " · con etapas anteriores incompletas (RN-4)" : ""}${nota ? " · con observación" : ""}`, p.id);
     await cargarAuditoria(p.id);
+    await notificarItemCerrado(p.id, `${S.sesion.nombre} cerró el ítem ${TMP.itemId} en ${p.nombre}`);
     TMP = {};
     cerrarModal(); toast("Ítem registrado con sello de fecha, hora y usuario"); render();
   }catch(e){
@@ -340,5 +368,207 @@ async function exportarRespaldo(){
   }catch(e){ console.error(e); toast("No se pudo generar la copia: " + mensajeError(e)); }
 }
 
+/* ---------- centro de notificaciones ---------- */
+function toggleNotificaciones(ev){
+  if(ev) ev.stopPropagation();
+  cerrarMenu();
+  S.notiAbierta = !S.notiAbierta;
+  if(S.notiAbierta) refrescarNotificaciones(); else render();
+}
+function cerrarNotificaciones(){
+  if(!S.notiAbierta) return;
+  S.notiAbierta = false; render();
+}
+async function refrescarNotificaciones(){
+  try{ await cargarNotificaciones(); }catch(e){ console.error(e); }
+  render();
+}
+async function abrirNotificacion(id, proyectoId){
+  cerrarNotificaciones();
+  try{
+    await marcarNotificacionLeidaDB(id);
+    const n = S.notificaciones.find(x => x.id === id);
+    if(n) n.leida = true;
+  }catch(e){ console.error(e); }
+  if(proyectoId) abrir(proyectoId); else render();
+}
+async function marcarTodasNotificacionesLeidas(){
+  try{
+    await marcarTodasNotificacionesLeidasDB();
+    S.notificaciones.forEach(n => n.leida = true);
+    render();
+  }catch(e){ console.error(e); toast(mensajeError(e)); }
+}
+
 /* ---------- archivados ---------- */
 function verArchivados(){ cerrarMenu(); S.pantalla = "archivados"; S.abierto = null; render(); window.scrollTo(0,0); }
+
+/* ---------- usuarios (Jefatura) ---------- */
+function verUsuarios(){
+  if(!esJefatura()) return toast("Solo Jefatura puede administrar usuarios.");
+  cerrarMenu(); S.pantalla = "usuarios"; S.abierto = null; render(); window.scrollTo(0,0);
+}
+
+function cambiarRolUsuario(usuarioId, nuevoRol){
+  const u = S.usuarios.find(x => x.id === usuarioId);
+  if(!u) return;
+  if(usuarioId === S.sesion.userId && nuevoRol !== "jefatura"){
+    abrirModal(`
+      <h3>Quitarte el rol de Jefatura</h3>
+      <div class="warnbox" style="background:#fdece9;color:#8c211a;border:1px solid #f3c9c6;font-weight:700">
+        Vas a pasar tu propia cuenta a Coordinador. Perderás esta pantalla y la vista de supervisión de inmediato.</div>
+      <div class="mact"><button class="btn g" onclick="cerrarModal()">Cancelar</button>
+      <button class="btn dr" onclick="cerrarModal();ejecutarCambioRol('${usuarioId}','${nuevoRol}')">Sí, quitarme Jefatura</button></div>`);
+    return;
+  }
+  ejecutarCambioRol(usuarioId, nuevoRol);
+}
+
+async function ejecutarCambioRol(usuarioId, nuevoRol){
+  const u = S.usuarios.find(x => x.id === usuarioId);
+  if(!u) return;
+  try{
+    await asignarRolDB(usuarioId, nuevoRol);
+    u.rol = nuevoRol;
+    await audit("rol_cambiado", `${u.nombre}: ahora ${nuevoRol}`);
+    toast(`${u.nombre} ahora es ${nuevoRol === "jefatura" ? "Jefatura" : "Coordinador"}.`);
+    if(usuarioId === S.sesion.userId){ S.sesion.rol = nuevoRol; S.panel = "proyectos"; }
+    render();
+  }catch(e){ console.error(e); toast(mensajeError(e)); }
+}
+
+/* ---------- catálogo de ítems (Jefatura) ---------- */
+function verCatalogo(){
+  if(!esJefatura()) return toast("Solo Jefatura puede editar el catálogo.");
+  cerrarMenu(); S.pantalla = "catalogo"; S.abierto = null; render(); window.scrollTo(0,0);
+}
+
+function formEtapaCatalogo(n){
+  const e = ETAPAS.find(x => x.n === n);
+  abrirModal(`
+    <h3>Editar etapa ${n}</h3>
+    <p class="q">El número y la fórmula de fecha límite de la etapa no se pueden cambiar (RN-5); solo su nombre y su hito.</p>
+    <div class="fgrp"><span class="lab">Nombre de la etapa</span><input type="text" id="ecNom" value="${esc(e.t)}"></div>
+    <div class="fgrp"><span class="lab">Hito</span><input type="text" id="ecHito" value="${esc(e.hito)}"></div>
+    <div id="ecMsg" class="warnbox" style="display:none;background:#fde8e6;color:#8c211a"></div>
+    <div class="mact"><button class="btn g" onclick="cerrarModal()">Cancelar</button>
+    <button class="btn p" onclick="guardarEtapaCatalogo(${n})">Guardar</button></div>`);
+}
+async function guardarEtapaCatalogo(n){
+  const nom = document.getElementById("ecNom").value.trim();
+  const hito = document.getElementById("ecHito").value.trim();
+  const err = m => { const b = document.getElementById("ecMsg"); b.textContent = m; b.style.display = "block"; };
+  if(!nom || !hito) return err("Completa ambos campos.");
+  try{
+    await actualizarEtapaCatalogoDB(n, {nombre: nom, hito});
+    const e = ETAPAS.find(x => x.n === n); e.t = nom; e.hito = hito;
+    await audit("catalogo_etapa_editada", `Etapa ${n}: ${nom}`);
+    cerrarModal(); toast(`Etapa ${n} actualizada`); render();
+  }catch(e2){ console.error(e2); err(mensajeError(e2)); }
+}
+
+function formItemCatalogo(id, etapaN){
+  const e = ETAPAS.find(x => x.n === etapaN);
+  const it = id ? e.items.find(i => i.id === id) : null;
+  const v = it || {id:"", x:"", ev:"opcional", ap:"*"};
+  const marcado = tipo => v.ap === "*" ? true : v.ap.includes(tipo);
+  abrirModal(`
+    <h3>${it ? `Editar ítem ${esc(id)}` : `Nuevo ítem · etapa ${etapaN}`}</h3>
+    ${it ? "" : `<div class="fgrp"><span class="lab">Identificador único</span>
+      <input type="text" id="icId" placeholder="${etapaN}.${e.items.length+1}"></div>`}
+    <div class="fgrp"><span class="lab">Texto del ítem</span><textarea id="icTexto" rows="2">${esc(v.x)}</textarea></div>
+    <div class="f2">
+      <div class="fgrp"><span class="lab">Evidencia</span>
+        <select id="icEv"><option value="obligatoria"${v.ev==='obligatoria'?' selected':''}>Obligatoria</option>
+        <option value="opcional"${v.ev==='opcional'?' selected':''}>Opcional</option></select></div>
+      <div class="fgrp"><span class="lab">Aplica a</span>
+        <select id="icAplica" onchange="document.getElementById('icTiposBox').style.display=this.value==='todos'?'none':'block'">
+          <option value="todos"${v.ap==='*'?' selected':''}>Todos los tipos</option>
+          <option value="algunos"${v.ap!=='*'?' selected':''}>Solo algunos tipos</option></select></div>
+    </div>
+    <div id="icTiposBox" style="display:${v.ap==='*'?'none':'block'};margin-bottom:14px">
+      ${TIPOS.map(t => `<label style="font-size:13px;display:inline-block;width:48%">
+        <input type="checkbox" class="icTipo" value="${esc(t)}" ${marcado(t)?'checked':''}> ${esc(t)}</label>`).join("")}
+    </div>
+    <div id="icMsg" class="warnbox" style="display:none;background:#fde8e6;color:#8c211a"></div>
+    <div class="mact">
+      ${it ? `<button class="btn dg" onclick="archivarItemCatalogo('${id}')" style="margin-right:auto">Quitar del catálogo</button>` : ""}
+      <button class="btn g" onclick="cerrarModal()">Cancelar</button>
+      <button class="btn p" onclick="guardarItemCatalogo(${it?`'${id}'`:"null"},${etapaN})">${it?"Guardar cambios":"Crear ítem"}</button></div>`);
+}
+
+async function guardarItemCatalogo(id, etapaN){
+  const texto = document.getElementById("icTexto").value.trim();
+  const ev = document.getElementById("icEv").value;
+  const aplicaTodos = document.getElementById("icAplica").value === "todos";
+  const tipos = [...document.querySelectorAll(".icTipo:checked")].map(c => c.value);
+  const err = m => { const b = document.getElementById("icMsg"); b.textContent = m; b.style.display = "block"; };
+  if(!texto) return err("Ingresa el texto del ítem.");
+  if(!aplicaTodos && !tipos.length) return err("Selecciona al menos un tipo de proyecto.");
+
+  try{
+    const e = ETAPAS.find(x => x.n === etapaN);
+    if(id){
+      await actualizarItemCatalogoDB(id, {texto, evidencia: ev, aplica_tipos: aplicaTodos ? [] : tipos});
+      Object.assign(e.items.find(i => i.id === id), {x: texto, ev, ap: aplicaTodos ? "*" : tipos});
+      await audit("catalogo_item_editado", id);
+      cerrarModal(); toast(`Ítem ${id} actualizado`); render();
+    }else{
+      const nid = document.getElementById("icId").value.trim();
+      if(!nid) return err("Ingresa un identificador para el ítem.");
+      if(ETAPAS.some(x => x.items.some(i => i.id === nid))) return err("Ese identificador ya existe.");
+      await crearItemCatalogoDB({id: nid, etapaN, texto, evidencia: ev, aplicaTipos: aplicaTodos ? [] : tipos, orden: e.items.length + 1});
+      e.items.push({id: nid, x: texto, ev, ap: aplicaTodos ? "*" : tipos});
+      await audit("catalogo_item_creado", nid);
+      cerrarModal(); toast(`Ítem ${nid} creado`); render();
+    }
+  }catch(e2){ console.error(e2); err(mensajeError(e2)); }
+}
+
+function archivarItemCatalogo(id){
+  abrirModal(`
+    <h3>Quitar ítem ${esc(id)} del catálogo</h3>
+    <p class="q">Ya no aparecerá en proyectos nuevos ni al cambiar el tipo de un proyecto existente. Los proyectos
+    que ya tienen este ítem en su checklist no se ven afectados: conservan su propia copia.</p>
+    <div class="mact"><button class="btn g" onclick="cerrarModal()">Cancelar</button>
+    <button class="btn dr" onclick="confirmarArchivarItemCatalogo('${id}')">Quitar del catálogo</button></div>`);
+}
+async function confirmarArchivarItemCatalogo(id){
+  try{
+    await archivarItemCatalogoDB(id, false);
+    for(const e of ETAPAS){ const i = e.items.findIndex(x => x.id === id); if(i >= 0) e.items.splice(i,1); }
+    await audit("catalogo_item_archivado", id);
+    cerrarModal(); toast(`Ítem ${id} quitado del catálogo`); render();
+  }catch(e){ console.error(e); cerrarModal(); toast(mensajeError(e)); }
+}
+
+async function verItemsArchivadosCatalogo(){
+  try{
+    const items = await cargarItemsArchivadosCatalogoDB();
+    abrirModal(`
+      <h3>Ítems archivados del catálogo</h3>
+      ${items.length ? items.map(i => `
+        <div class="alrow" style="cursor:default">
+          <div style="flex:1"><b>${esc(i.id)}</b> · Etapa ${i.etapa_n}<br><small>${esc(i.texto)}</small></div>
+          <button class="evbtn" onclick="restaurarItemCatalogo('${i.id}')">Restaurar</button>
+        </div>`).join("") : `<p class="q">No hay ítems archivados.</p>`}
+      <div class="mact"><button class="btn g" onclick="cerrarModal()">Cerrar</button></div>`, true);
+  }catch(e){ console.error(e); toast(mensajeError(e)); }
+}
+async function restaurarItemCatalogo(id){
+  try{
+    await archivarItemCatalogoDB(id, true);
+    await cargarCatalogo();   // re-trae todo el catálogo: más simple y robusto que reinsertar a mano en orden
+    await audit("catalogo_item_restaurado", id);
+    cerrarModal(); toast(`Ítem ${id} restaurado`); render();
+  }catch(e){ console.error(e); toast(mensajeError(e)); }
+}
+
+function abrirInvitarUsuario(){
+  abrirModal(`
+    <h3>Cómo agregar un nuevo usuario</h3>
+    <p class="q">No existe un botón de "enviar invitación por correo": la persona crea su propia cuenta desde la
+    pantalla de ingreso (enlace "Crear cuenta"), con su propio correo y contraseña. Queda como Coordinador por
+    defecto. Vuelve aquí, a <b>Usuarios</b>, y súbele el rol a Jefatura si corresponde.</p>
+    <div class="mact"><button class="btn p" onclick="cerrarModal()">Entendido</button></div>`);
+}

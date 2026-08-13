@@ -58,6 +58,32 @@ async function crearCuentas(){
   render();
 }
 
+/* ---------- alta de una cuenta nueva (tras el arranque inicial) ----------
+   Siempre queda como 'coordinador': el rol 'jefatura' no se puede
+   autoasignar por registro público (lo aplica el trigger en schema.sql).
+   Una Jefatura ya activa la asciende después desde Menú → Usuarios. */
+async function crearCuentaPropia(){
+  const g = k => document.getElementById(k).value.trim();
+  const msg = m => { const b = document.getElementById("ccMsg"); b.textContent = m; b.style.display = "block"; };
+  const nom = g("ccNom"), email = g("ccEmail"), pass = g("ccPass"), pass2 = g("ccPass2");
+  if(!nom || !email) return msg("Completa tu nombre y correo.");
+  if(pass.length < 6) return msg("La contraseña debe tener al menos 6 caracteres.");
+  if(pass !== pass2) return msg("Las contraseñas no coinciden.");
+
+  const btn = document.getElementById("ccBtn");
+  if(btn){ btn.disabled = true; btn.textContent = "Creando cuenta…"; }
+  const { data, error } = await sb.auth.signUp({email, password: pass, options: {data: {nombre: nom}}});
+  if(error){
+    if(btn){ btn.disabled = false; btn.textContent = "Crear cuenta"; }
+    return msg(error.message);
+  }
+  if(data.session) await sb.auth.signOut();   // vuelve a la pantalla de ingreso, igual que en la configuración inicial
+  cerrarModal();
+  toast(data.session
+    ? "Cuenta creada. Ya puedes ingresar."
+    : "Cuenta creada. Revisa tu correo para confirmarla antes de ingresar.");
+}
+
 /* ---------- ingreso ---------- */
 async function ingresar(){
   const email = document.getElementById("liEmail").value.trim();
