@@ -36,24 +36,31 @@ Repasé de punta a punta el login y los roles y corregí varios problemas antes 
 
 Ninguno de estos cambios requiere un paso adicional tuyo más allá de volver a correr `schema.sql` completo.
 
-## Usuarios: ya no hay límite de 1 por rol
+## Usuarios: ya no hay límite de 1 por rol, e invitar por correo ya funciona
 
 Antes la base de datos forzaba exactamente 1 Coordinador y 1 Jefatura (un índice único). Ahora se admiten varios
-titulares de cada rol. Cómo agregar a alguien nuevo:
+titulares de cada rol, y **Menú ☰ → Usuarios → "Agregar usuario"** ya envía una invitación real por correo: la
+persona recibe un enlace, define su contraseña, y al entrar por primera vez ya queda con el rol que hayas elegido
+(Coordinador o Jefatura) — no necesita pasar por "Crear cuenta" ni que nadie la ascienda después.
 
-1. La persona entra a la pantalla de ingreso y hace clic en **"¿Nuevo aquí? Crear cuenta"** — se registra con su
-   propio correo y contraseña. Queda como **Coordinador** por defecto (es el rol seguro: nadie puede autoasignarse
-   Jefatura por registro público, lo bloquea un disparador en Postgres).
-2. Una **Jefatura ya activa** entra, abre **Menú ☰ → Usuarios**, y le sube el rol a Jefatura con un clic
-   ("Ascender a Jefatura"). Desde ahí también puede revertirlo.
+Esto usa la **primera Edge Function del proyecto** (`invitar-usuario`, en `supabase/functions/invitar-usuario/`):
+verifica server-side que quien invita sea Jefatura, y recién ahí usa `service_role` (se la inyecta Supabase
+automáticamente como variable de entorno — nunca vive en el cliente ni en este repo) para crear la cuenta y
+disparar el correo de invitación con el envío de correo propio de Supabase Auth (el mismo que ya usan la
+confirmación de cuenta y "olvidé mi contraseña" — no hace falta ninguna cuenta ni clave de un proveedor externo).
+Ya está desplegada en tu proyecto real.
 
-No hay envío automático de un correo de invitación (habría que sumar una Edge Function con la clave `service_role`,
-que deliberadamente no se usa en este proyecto — ver más abajo). Es un flujo de 2 pasos: la persona se registra,
-alguien de Jefatura la asciende.
+Sigue existiendo el camino manual de siempre por si lo prefieres: la persona entra a la pantalla de ingreso, hace
+clic en **"¿Nuevo aquí? Crear cuenta"** y se registra por su cuenta (queda como Coordinador); una Jefatura la sube
+de rol después desde Usuarios.
 
-Si vienes de una versión anterior de este esquema, vuelve a ejecutar `supabase/schema.sql` completo (es seguro,
-usa `drop index if exists` / `create or replace`) para quitar el límite de 1 cuenta por rol y habilitar la función
-`asignar_rol` que usa la pantalla de Usuarios.
+Si vuelves a desplegar la función a mano (`supabase functions deploy invitar-usuario` desde `app/`, con
+`SUPABASE_ACCESS_TOKEN` configurado), no necesita ningún secreto adicional — `SUPABASE_URL`, `SUPABASE_ANON_KEY`
+y `SUPABASE_SERVICE_ROLE_KEY` ya los provee Supabase automáticamente a toda Edge Function.
+
+Vuelve a ejecutar `supabase/schema.sql` completo (es seguro, usa `drop index if exists` / `create or replace`)
+para quitar el límite de 1 cuenta por rol y habilitar `asignar_rol`, que la pantalla de Usuarios sigue usando
+para ascender/degradar manualmente a alguien que ya tenga cuenta.
 
 ## Catálogo de ítems: ahora editable, ya no vive en el código
 

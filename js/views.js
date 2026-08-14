@@ -506,6 +506,7 @@ function etiquetaAccion(a){
     ingreso_fallido:"intento de ingreso fallido", pin_restablecido:"restableció un PIN",
     configuracion_inicial:"configuración inicial", respaldo_exportado:"exportó un respaldo",
     respaldo_importado:"importó un respaldo", rol_cambiado:"cambió el rol de un usuario",
+    usuario_invitado:"invitó a un usuario",
     catalogo_etapa_editada:"editó una etapa del catálogo", catalogo_item_creado:"creó un ítem del catálogo",
     catalogo_item_editado:"editó un ítem del catálogo", catalogo_item_archivado:"quitó un ítem del catálogo",
     catalogo_item_restaurado:"restauró un ítem del catálogo",

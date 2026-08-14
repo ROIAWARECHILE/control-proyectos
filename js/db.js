@@ -19,13 +19,31 @@ async function existeJefatura(){
   return !!data;
 }
 
+async function cargarUsuarios(){
+  const { data, error } = await sb.from("profiles").select("*");
+  if(error) throw error;
+  S.usuarios = data || [];
+}
+
+/* Invita a alguien por correo con el rol que elija Jefatura (Edge Function
+   "invitar-usuario": único punto del proyecto con service_role, gestionado
+   por Supabase — nunca vive en el cliente). Verifica el rol de quien llama
+   server-side antes de crear la cuenta y enviar el correo de invitación. */
+async function invitarUsuarioDB(email, nombre, rol){
+  const { data, error } = await sb.functions.invoke("invitar-usuario", {body: {email, nombre, rol}});
+  if(error){
+    let msg = error.message;
+    try{ const cuerpo = await error.context.json(); if(cuerpo?.error) msg = cuerpo.error; }catch(_e){}
+    throw new Error(msg);
+  }
+  if(data?.error) throw new Error(data.error);
+  return data;
+}
+
 async function cargarEstado(){
   await cargarCatalogo();
   await cargarInstaladores();
-
-  const { data: perfiles, error: e1 } = await sb.from("profiles").select("*");
-  if(e1) throw e1;
-  S.usuarios = perfiles || [];
+  await cargarUsuarios();
 
   const { data: proys, error: e2 } = await sb.from("proyectos").select("*").order("created_at", {ascending:true});
   if(e2) throw e2;

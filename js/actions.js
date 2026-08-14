@@ -440,7 +440,7 @@ async function ejecutarCambioRol(usuarioId, nuevoRol){
     u.rol = nuevoRol;
     await audit("rol_cambiado", `${u.nombre}: ahora ${nuevoRol}`);
     toast(`${u.nombre} ahora es ${nuevoRol === "jefatura" ? "Jefatura" : "Coordinador"}.`);
-    if(usuarioId === S.sesion.userId){ S.sesion.rol = nuevoRol; S.panel = "proyectos"; }
+    if(usuarioId === S.sesion.userId){ S.sesion.rol = nuevoRol; S.panel = "proyectos"; S.pantalla = null; }
     render();
   }catch(e){ console.error(e); toast(mensajeError(e)); }
 }
@@ -653,10 +653,39 @@ async function restaurarInstalador(id){
 }
 
 function abrirInvitarUsuario(){
+  if(!esJefatura()) return toast("Solo Jefatura puede invitar usuarios.");
   abrirModal(`
-    <h3>Cómo agregar un nuevo usuario</h3>
-    <p class="q">No existe un botón de "enviar invitación por correo": la persona crea su propia cuenta desde la
-    pantalla de ingreso (enlace "Crear cuenta"), con su propio correo y contraseña. Queda como Coordinador por
-    defecto. Vuelve aquí, a <b>Usuarios</b>, y súbele el rol a Jefatura si corresponde.</p>
-    <div class="mact"><button class="btn p" onclick="cerrarModal()">Entendido</button></div>`);
+    <h3>Invitar usuario</h3>
+    <p class="q">Le llega un correo con un enlace para definir su contraseña; al entrar por primera vez ya queda
+    con el rol que elijas acá — no necesita pasar por "Crear cuenta" ni que nadie la ascienda después.</p>
+    <div class="fgrp"><span class="lab">Nombre</span><input type="text" id="ivNom" placeholder="Ej: Yerko Ardiles"></div>
+    <div class="fgrp"><span class="lab">Correo</span><input type="text" id="ivEmail" placeholder="correo@empresa.cl"></div>
+    <div class="fgrp"><span class="lab">Rol</span>
+      <select id="ivRol"><option value="coordinador">Coordinador</option><option value="jefatura">Jefatura</option></select></div>
+    <div id="ivMsg" class="warnbox" style="display:none;background:#fde8e6;color:#8c211a"></div>
+    <div class="mact">
+      <button class="btn g" onclick="cerrarModal()">Cancelar</button>
+      <button class="btn p" id="ivBtn" onclick="invitarUsuario()">Enviar invitación</button></div>`);
+  setTimeout(() => document.getElementById("ivNom")?.focus(), 60);
+}
+
+async function invitarUsuario(){
+  const nombre = document.getElementById("ivNom").value.trim();
+  const email = document.getElementById("ivEmail").value.trim();
+  const rol = document.getElementById("ivRol").value;
+  const err = m => { const b = document.getElementById("ivMsg"); b.textContent = m; b.style.display = "block"; };
+  if(!nombre || !email) return err("Completa el nombre y el correo.");
+
+  const btn = document.getElementById("ivBtn");
+  btn.disabled = true; btn.textContent = "Enviando…";
+  try{
+    await invitarUsuarioDB(email, nombre, rol);
+    try{ await cargarUsuarios(); }catch(e){ console.error(e); }
+    await audit("usuario_invitado", `${nombre} (${email}) como ${rol === "jefatura" ? "Jefatura" : "Coordinador"}`);
+    cerrarModal(); toast(`Invitación enviada a ${email}`); render();
+  }catch(e){
+    console.error(e);
+    btn.disabled = false; btn.textContent = "Enviar invitación";
+    err(mensajeError(e));
+  }
 }
