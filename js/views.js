@@ -80,6 +80,7 @@ function renderTopbar(){
       <button onclick="verArchivados()">Proyectos archivados<small>Eliminados de forma lógica, recuperables</small></button>
       ${esJefatura() ? `<button onclick="verUsuarios()">Usuarios<small>Ver cuentas y asignar roles</small></button>` : ""}
       ${esJefatura() ? `<button onclick="verCatalogo()">Catálogo de ítems<small>Editar el checklist de los proyectos nuevos</small></button>` : ""}
+      ${esJefatura() ? `<button onclick="verInstaladores()">Instaladores<small>Lista de instaladores externos</small></button>` : ""}
       <div class="sep"></div>
       <button onclick="exportarRespaldo()">Exportar copia<small>Descarga en JSON lo que puedes ver</small></button>
       <div class="sep"></div>
@@ -98,6 +99,7 @@ function render(){
   if(S.pantalla === "archivados") return vistaArchivados();
   if(S.pantalla === "usuarios")   return vistaUsuarios();
   if(S.pantalla === "catalogo")   return vistaCatalogo();
+  if(S.pantalla === "instaladores") return vistaInstaladores();
   if(S.pantalla === "acta")       return vistaActa();
   if(S.abierto)                   return vistaDetalle();
   if(esJefatura() || S.panel === "dashboard") return vistaJefatura();
@@ -463,6 +465,8 @@ function etiquetaAccion(a){
     catalogo_etapa_editada:"editó una etapa del catálogo", catalogo_item_creado:"creó un ítem del catálogo",
     catalogo_item_editado:"editó un ítem del catálogo", catalogo_item_archivado:"quitó un ítem del catálogo",
     catalogo_item_restaurado:"restauró un ítem del catálogo",
+    instalador_creado:"agregó un instalador", instalador_editado:"editó un instalador",
+    instalador_archivado:"quitó un instalador", instalador_restaurado:"restauró un instalador",
   })[a] || a;
 }
 
@@ -564,6 +568,23 @@ function vistaCatalogo(){
         </div>`).join("")}
       <div class="alrow" style="cursor:pointer;color:var(--brand);font-weight:650" onclick="formItemCatalogo(null,${e.n})">+ Agregar ítem a esta etapa</div>
     </div>`).join("")}`;
+}
+
+/* ---------- INSTALADORES (Jefatura) ---------- */
+function vistaInstaladores(){
+  const lista = [...INSTALADORES].sort((a,b) => a.nombre.localeCompare(b.nombre));
+  app.innerHTML = `
+  <button class="back" onclick="S.pantalla=null;render()">‹ Volver</button>
+  <div class="ph"><div><h1>Instaladores</h1>
+    <p class="sub" style="margin:0">Lista de instaladores externos disponible al crear o editar un proyecto.</p></div>
+    <div style="display:flex;gap:9px">
+      <button class="btn g" onclick="verInstaladoresArchivados()">Archivados</button>
+      <button class="btn p" onclick="formInstalador(null)">+ Agregar instalador</button>
+    </div></div>
+  <div class="card">${lista.length ? lista.map(i => `
+    <div class="alrow" onclick="formInstalador('${i.id}')">
+      <div style="flex:1"><b>${esc(i.nombre)}</b></div>
+    </div>`).join("") : `<div class="empty">Aún no hay instaladores registrados.</div>`}</div>`;
 }
 
 /* ---------- ACTA DE RECEPCIÓN ---------- */

@@ -83,7 +83,14 @@ function formProyecto(id){
       <div><span class="lab">Cliente</span><input type="text" id="fCli" value="${esc(v.cliente==="Por definir"?"":v.cliente)}" placeholder="Opcional"></div>
       <div><span class="lab">Comuna / ubicación</span><input type="text" id="fCom" value="${esc(v.comuna==="—"?"":v.comuna)}" placeholder="Opcional"></div>
       <div style="grid-column:1/-1"><span class="lab">Instalador externo</span>
-        <input type="text" id="fInst" value="${esc(v.inst==="Por asignar"?"":v.inst)}" placeholder="Opcional"></div>
+        ${INSTALADORES.length
+          ? `<select id="fInst">
+              <option value="">Sin asignar</option>
+              ${INSTALADORES.map(ins => `<option${ins.nombre===v.inst?" selected":""}>${esc(ins.nombre)}</option>`).join("")}
+              ${(v.inst && v.inst!=="Por asignar" && !INSTALADORES.some(ins=>ins.nombre===v.inst)) ? `<option selected>${esc(v.inst)}</option>` : ""}
+            </select>`
+          : `<input type="text" value="Aún no hay instaladores registrados (Menú → Instaladores)" disabled>`}
+      </div>
     </div>
     ${!puedeFechasTipo ? `<div class="warnbox" style="margin:14px 0 0">Como Coordinador puedes editar nombre, cliente, comuna e instalador.
       Fechas y tipo de proyecto los cambia Jefatura (Especificación §2).</div>` : ''}
@@ -561,6 +568,86 @@ async function restaurarItemCatalogo(id){
     await cargarCatalogo();   // re-trae todo el catálogo: más simple y robusto que reinsertar a mano en orden
     await audit("catalogo_item_restaurado", id);
     cerrarModal(); toast(`Ítem ${id} restaurado`); render();
+  }catch(e){ console.error(e); toast(mensajeError(e)); }
+}
+
+/* ---------- instaladores (Jefatura) ---------- */
+function verInstaladores(){
+  if(!esJefatura()) return toast("Solo Jefatura puede editar la lista de instaladores.");
+  cerrarMenu(); S.pantalla = "instaladores"; S.abierto = null; render(); window.scrollTo(0,0);
+}
+
+function formInstalador(id){
+  const it = id ? INSTALADORES.find(i => i.id === id) : null;
+  abrirModal(`
+    <h3>${it ? `Editar instalador` : "Agregar instalador"}</h3>
+    <div class="fgrp"><span class="lab">Nombre</span>
+      <input type="text" id="inNom" value="${esc(it ? it.nombre : "")}" placeholder="Ej: Carlos Alcántara"></div>
+    <div id="inMsg" class="warnbox" style="display:none;background:#fde8e6;color:#8c211a"></div>
+    <div class="mact">
+      ${it ? `<button class="btn dg" onclick="archivarInstalador('${id}')" style="margin-right:auto">Quitar de la lista</button>` : ""}
+      <button class="btn g" onclick="cerrarModal()">Cancelar</button>
+      <button class="btn p" onclick="guardarInstalador(${it?`'${id}'`:"null"})">${it?"Guardar cambios":"Agregar"}</button></div>`);
+  setTimeout(() => document.getElementById("inNom")?.focus(), 50);
+}
+
+async function guardarInstalador(id){
+  const nombre = document.getElementById("inNom").value.trim();
+  const err = m => { const b = document.getElementById("inMsg"); b.textContent = m; b.style.display = "block"; };
+  if(!nombre) return err("Ingresa el nombre del instalador.");
+  try{
+    if(id){
+      await actualizarInstaladorDB(id, {nombre});
+      Object.assign(INSTALADORES.find(i => i.id === id), {nombre});
+      await audit("instalador_editado", nombre);
+      cerrarModal(); toast("Instalador actualizado"); render();
+    }else{
+      const creado = await crearInstaladorDB(nombre);
+      INSTALADORES.push(creado);
+      await audit("instalador_creado", nombre);
+      cerrarModal(); toast(`${nombre} agregado a la lista`); render();
+    }
+  }catch(e){ console.error(e); err(mensajeError(e)); }
+}
+
+function archivarInstalador(id){
+  const it = INSTALADORES.find(i => i.id === id);
+  abrirModal(`
+    <h3>Quitar a ${esc(it.nombre)} de la lista</h3>
+    <p class="q">Ya no aparecerá como opción al crear o editar proyectos. Los proyectos que ya lo tienen asignado
+    no se ven afectados.</p>
+    <div class="mact"><button class="btn g" onclick="cerrarModal()">Cancelar</button>
+    <button class="btn dr" onclick="confirmarArchivarInstalador('${id}')">Quitar de la lista</button></div>`);
+}
+async function confirmarArchivarInstalador(id){
+  const it = INSTALADORES.find(i => i.id === id);
+  try{
+    await archivarInstaladorDB(id, false);
+    INSTALADORES = INSTALADORES.filter(i => i.id !== id);
+    await audit("instalador_archivado", it?.nombre || id);
+    cerrarModal(); toast(`${it?.nombre || "Instalador"} quitado de la lista`); render();
+  }catch(e){ console.error(e); cerrarModal(); toast(mensajeError(e)); }
+}
+
+async function verInstaladoresArchivados(){
+  try{
+    const lista = await cargarInstaladoresArchivadosDB();
+    abrirModal(`
+      <h3>Instaladores archivados</h3>
+      ${lista.length ? lista.map(i => `
+        <div class="alrow" style="cursor:default">
+          <div style="flex:1"><b>${esc(i.nombre)}</b></div>
+          <button class="evbtn" onclick="restaurarInstalador('${i.id}')">Restaurar</button>
+        </div>`).join("") : `<p class="q">No hay instaladores archivados.</p>`}
+      <div class="mact"><button class="btn g" onclick="cerrarModal()">Cerrar</button></div>`, true);
+  }catch(e){ console.error(e); toast(mensajeError(e)); }
+}
+async function restaurarInstalador(id){
+  try{
+    await archivarInstaladorDB(id, true);
+    await cargarInstaladores();
+    await audit("instalador_restaurado", id);
+    cerrarModal(); toast("Instalador restaurado"); render();
   }catch(e){ console.error(e); toast(mensajeError(e)); }
 }
 

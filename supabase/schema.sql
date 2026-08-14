@@ -483,6 +483,43 @@ create policy "notificaciones: cada quien marca las suyas como leidas"
 -- Sin policy de insert/delete desde el cliente: se crean solo vía notificar_item_cerrado() (security definer).
 
 -- ---------------------------------------------------------------------
+-- 9. INSTALADORES — lista real de instaladores externos (reemplaza el
+--    campo libre que tenía "Instalador externo" en proyectos). Mismo
+--    patrón que items_catalogo: activo=false archiva, nunca se borra.
+--    proyectos.instalador sigue siendo texto, ahora elegido desde esta
+--    lista en vez de escrito a mano (sin FK a propósito: no hace falta
+--    integridad referencial dura para un campo puramente informativo).
+-- ---------------------------------------------------------------------
+create table if not exists public.instaladores (
+  id uuid primary key default gen_random_uuid(),
+  nombre text not null,
+  activo boolean not null default true,
+  created_at timestamptz not null default now()
+);
+create unique index if not exists instaladores_nombre_unico on public.instaladores (lower(nombre));
+
+-- Semilla: equipo de instaladores entregado por el cliente. No pisa
+-- ediciones ya hechas por Jefatura si vuelves a correr este archivo.
+insert into public.instaladores (nombre) values
+  ('Carlos Alcántara'), ('Gustavo Montanares'), ('Luis Felipe Ureña'), ('Pedro Romero'),
+  ('Felipe Villca'), ('Jorge Romero'), ('Miljan Atencio')
+on conflict (lower(nombre)) do nothing;
+
+alter table public.instaladores enable row level security;
+drop policy if exists "instaladores: lectura autenticados" on public.instaladores;
+create policy "instaladores: lectura autenticados"
+  on public.instaladores for select to authenticated using (true);
+drop policy if exists "instaladores: jefatura inserta" on public.instaladores;
+create policy "instaladores: jefatura inserta"
+  on public.instaladores for insert to authenticated
+  with check (public.mi_rol() = 'jefatura');
+drop policy if exists "instaladores: jefatura edita" on public.instaladores;
+create policy "instaladores: jefatura edita"
+  on public.instaladores for update to authenticated
+  using (public.mi_rol() = 'jefatura') with check (public.mi_rol() = 'jefatura');
+-- Sin policy de delete: "quitar" un instalador es archivarlo (activo=false), igual que items_catalogo.
+
+-- ---------------------------------------------------------------------
 -- Fin. Revisa Database -> Advisors en el dashboard para confirmar que
 -- todas las tablas quedaron con RLS activo.
 -- ---------------------------------------------------------------------

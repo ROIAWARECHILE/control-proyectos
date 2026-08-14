@@ -20,6 +20,10 @@ const LINEAS_PISCINA = ["SWIM","SMARTPOOLS"];   // solo aplica cuando tipo === "
    cada uno guarda su propia copia (snapshotChecklist) al crearse. */
 let ETAPAS = [];
 
+/* Lista de instaladores externos, editable desde Menú → Instaladores (solo
+   Jefatura). Reemplaza el campo libre que tenía "Instalador externo". */
+let INSTALADORES = [];
+
 /* ---------- estado global de la aplicación ---------- */
 const S = {
   hayCuentas: null,      // null = aún no se sabe · true/false tras consultar Supabase

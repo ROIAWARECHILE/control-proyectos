@@ -15,6 +15,7 @@ async function existenCuentas(){
 
 async function cargarEstado(){
   await cargarCatalogo();
+  await cargarInstaladores();
 
   const { data: perfiles, error: e1 } = await sb.from("profiles").select("*");
   if(e1) throw e1;
@@ -69,6 +70,37 @@ async function archivarItemCatalogoDB(id, activo){
 
 async function cargarItemsArchivadosCatalogoDB(){
   const { data, error } = await sb.from("items_catalogo").select("*").eq("activo", false).order("etapa_n").order("id");
+  if(error) throw error;
+  return data || [];
+}
+
+/* ---------- instaladores (editable, Menú → Instaladores) ---------- */
+async function cargarInstaladores(){
+  const { data, error } = await sb.from("instaladores").select("*").eq("activo", true).order("nombre");
+  if(error) throw error;
+  INSTALADORES = data || [];
+}
+
+async function crearInstaladorDB(nombre){
+  const { data, error } = await sb.from("instaladores").insert({nombre}).select().single();
+  if(error) throw error;
+  return data;
+}
+
+async function actualizarInstaladorDB(id, campos){
+  const { data, error } = await sb.from("instaladores").update(campos).eq("id", id).select().single();
+  if(error) throw error;
+  return data;
+}
+
+/* activo=false archiva, activo=true restaura (mismo criterio que items_catalogo) */
+async function archivarInstaladorDB(id, activo){
+  const { error } = await sb.from("instaladores").update({activo}).eq("id", id);
+  if(error) throw error;
+}
+
+async function cargarInstaladoresArchivadosDB(){
+  const { data, error } = await sb.from("instaladores").select("*").eq("activo", false).order("nombre");
   if(error) throw error;
   return data || [];
 }
