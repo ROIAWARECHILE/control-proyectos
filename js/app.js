@@ -31,6 +31,7 @@ document.addEventListener("keydown", e => { if(e.key === "Escape"){ cerrarModal(
   }
 
   if(S.hayCuentas){
+    try{ S.hayJefatura = await existeJefatura(); }catch(e){ console.error(e); S.hayJefatura = true; }   // ante la duda, no ofrecer el atajo
     try{ await restaurarSesion(); }catch(e){ console.error(e); }
     if(S.sesion){ try{ await cargarEstado(); }catch(e){ console.error(e); toast(mensajeError(e)); } }
   }

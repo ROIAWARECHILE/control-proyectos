@@ -20,6 +20,22 @@ No tengo permiso para ejecutar SQL directamente en tu proyecto `djgrqunkbrppcqhf
 
 Si algo falla en este paso, avísame el mensaje de error del SQL Editor y lo corrijo de inmediato.
 
+## Revisión de seguridad del sistema de login (recién hecha)
+
+Repasé de punta a punta el login y los roles y corregí varios problemas antes de que llegaran a producción:
+
+- **`notificar_item_cerrado()` no verificaba de quién era el proyecto** — cualquier Coordinador podía, llamando
+  al RPC directo (no desde la UI), avisarle a Jefatura sobre un proyecto ajeno con un mensaje inventado. Corregido:
+  ahora exige que el proyecto sea del Coordinador que llama.
+- **La última cuenta Jefatura podía autodegradarse a Coordinador** sin ningún bloqueo real. Corregido en dos
+  capas: `asignar_rol()` lo rechaza server-side, y el botón queda deshabilitado en la interfaz.
+- **Si el arranque inicial fallaba a medias** (Coordinador creado, Jefatura no), no quedaba ningún camino en la
+  interfaz para crear esa Jefatura. Ahora la pantalla de login lo detecta y ofrece crearla directamente.
+- **Fallas silenciosas al iniciar sesión**: si faltara alguna tabla (por ejemplo, por no haber corrido este mismo
+  archivo), el login mostraba una app vacía sin ningún mensaje. Ahora se avisa con un mensaje claro.
+
+Ninguno de estos cambios requiere un paso adicional tuyo más allá de volver a correr `schema.sql` completo.
+
 ## Usuarios: ya no hay límite de 1 por rol
 
 Antes la base de datos forzaba exactamente 1 Coordinador y 1 Jefatura (un índice único). Ahora se admiten varios
@@ -74,6 +90,13 @@ correo real, es la siguiente pieza natural a construir.
 
 Vuelve a ejecutar `supabase/schema.sql` completo para crear la tabla `notificaciones` y la función
 `notificar_item_cerrado`.
+
+## Instaladores: lista real en vez de campo libre
+
+"Instalador externo" dejó de ser un campo de texto libre: ahora se elige de una lista real (Menú → Instaladores,
+solo Jefatura) que ya trae sembrado el equipo de instaladores. Se pueden agregar, editar y "quitar" (se archiva,
+igual que el catálogo de ítems — nunca se borra). Los proyectos ya creados con el nombre de instalador escrito a
+mano no se ven afectados. Vuelve a ejecutar `supabase/schema.sql` para crear la tabla `instaladores`.
 
 ## Tipos de proyecto: ahora solo Piscina y Tiny House
 

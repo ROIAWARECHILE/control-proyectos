@@ -84,6 +84,34 @@ async function crearCuentaPropia(){
     : "Cuenta creada. Revisa tu correo para confirmarla antes de ingresar.");
 }
 
+/* ---------- crear la primera cuenta Jefatura (recuperación de arranque) ----------
+   Solo tiene efecto mientras no exista ninguna Jefatura (lo aplica el mismo
+   trigger que la configuración inicial); por eso vistaLogin() solo ofrece
+   este botón cuando S.hayJefatura === false. */
+async function crearCuentaJefatura(){
+  const g = k => document.getElementById(k).value.trim();
+  const msg = m => { const b = document.getElementById("cjMsg"); b.textContent = m; b.style.display = "block"; };
+  const nom = g("cjNom"), email = g("cjEmail"), pass = g("cjPass"), pass2 = g("cjPass2");
+  if(!nom || !email) return msg("Completa el nombre y el correo.");
+  if(pass.length < 6) return msg("La contraseña debe tener al menos 6 caracteres.");
+  if(pass !== pass2) return msg("Las contraseñas no coinciden.");
+
+  const btn = document.getElementById("cjBtn");
+  if(btn){ btn.disabled = true; btn.textContent = "Creando cuenta…"; }
+  const { data, error } = await sb.auth.signUp({email, password: pass, options: {data: {nombre: nom, rol: "jefatura"}}});
+  if(error){
+    if(btn){ btn.disabled = false; btn.textContent = "Crear cuenta Jefatura"; }
+    return msg(error.message);
+  }
+  if(data.session) await sb.auth.signOut();
+  S.hayJefatura = true;
+  cerrarModal();
+  toast(data.session
+    ? "Cuenta Jefatura creada. Ya puedes ingresar."
+    : "Cuenta Jefatura creada. Revisa tu correo para confirmarla antes de ingresar.");
+  render();
+}
+
 /* ---------- ingreso ---------- */
 async function ingresar(){
   const email = document.getElementById("liEmail").value.trim();
@@ -105,7 +133,7 @@ async function ingresar(){
     return msg("Tu cuenta no tiene un perfil asociado en esta plataforma.");
   }
   S.panel = "proyectos"; S.abierto = null; S.pantalla = null;
-  try{ await cargarEstado(); }catch(e){ console.error(e); }
+  try{ await cargarEstado(); }catch(e){ console.error(e); toast(mensajeError(e)); }
   await audit("ingreso", "");
   render();
 }
@@ -145,9 +173,35 @@ async function confirmarNuevaContrasena(){
   const { error } = await sb.auth.updateUser({password: p1});
   if(error) return msg(error.message);
   S.recuperando = false;
+  toast("Contraseña actualizada.");
   const { data: {session} } = await sb.auth.getSession();
   if(session) await cargarSesionDesdePerfil(session.user);
-  if(S.sesion){ try{ await cargarEstado(); }catch(e){ console.error(e); } await audit("password_restablecido", ""); }
-  toast("Contraseña actualizada.");
+  if(S.sesion){
+    try{ await cargarEstado(); }catch(e){ console.error(e); toast(mensajeError(e)); }
+    await audit("password_restablecido", "");
+  }
   render();
+}
+
+/* ---------- cambiar contraseña estando ya logueado (Menú → Cambiar contraseña) ----------
+   A diferencia de confirmarNuevaContrasena(), no depende del enlace de
+   recuperación: la sesión activa ya es prueba suficiente de identidad
+   (mismo criterio que usa Supabase Auth para permitir updateUser). */
+async function guardarCambioContrasena(){
+  const p1 = document.getElementById("cpPass1").value;
+  const p2 = document.getElementById("cpPass2").value;
+  const msg = m => { const b = document.getElementById("cpMsg"); b.textContent = m; b.style.display = "block"; };
+  if(p1.length < 6) return msg("La contraseña debe tener al menos 6 caracteres.");
+  if(p1 !== p2) return msg("Las contraseñas no coinciden.");
+
+  const btn = document.getElementById("cpBtn");
+  if(btn){ btn.disabled = true; btn.textContent = "Guardando…"; }
+  const { error } = await sb.auth.updateUser({password: p1});
+  if(error){
+    if(btn){ btn.disabled = false; btn.textContent = "Guardar"; }
+    return msg(error.message);
+  }
+  await audit("password_cambiado", "");
+  cerrarModal();
+  toast("Contraseña actualizada.");
 }

@@ -84,6 +84,7 @@ function renderTopbar(){
       <div class="sep"></div>
       <button onclick="exportarRespaldo()">Exportar copia<small>Descarga en JSON lo que puedes ver</small></button>
       <div class="sep"></div>
+      <button onclick="abrirCambiarContrasena()">Cambiar contraseña<small>Define una nueva contraseña para tu cuenta</small></button>
       <button onclick="salir()">Cerrar sesión</button>
     </div>`;
 }
@@ -158,6 +159,10 @@ function vistaLogin(){
     <button class="btn p" id="liBtn" style="width:100%;padding:12px" onclick="ingresar()">Ingresar</button>
     <p style="text-align:center;margin:14px 0 0"><button class="linkbtn" onclick="olvideContrasena()">¿Olvidaste tu contraseña?</button></p>
     <p style="text-align:center;margin:8px 0 0"><button class="linkbtn" onclick="abrirCrearCuenta()">¿Nuevo aquí? Crear cuenta</button></p>
+    ${S.hayJefatura === false ? `
+    <div class="warnbox" style="margin-top:16px;text-align:center">Todavía no hay ninguna cuenta Jefatura activa
+      (¿se interrumpió la configuración inicial?).<br>
+      <button class="linkbtn" onclick="abrirCrearJefatura()">Crear la primera cuenta Jefatura</button></div>` : ''}
   </div></div>`;
   setTimeout(() => document.getElementById("liEmail")?.focus(), 60);
 }
@@ -181,6 +186,28 @@ function abrirCrearCuenta(){
   setTimeout(() => document.getElementById("ccNom")?.focus(), 60);
 }
 
+/* ---------- crear la primera cuenta Jefatura (recuperación de arranque) ----------
+   Solo se ofrece cuando S.hayJefatura === false (ver vistaLogin). En cuanto
+   se crea una, este camino se cierra: nuevas Jefaturas se agregan luego
+   desde Menú → Usuarios (asignar_rol), nunca por autorregistro. */
+function abrirCrearJefatura(){
+  abrirModal(`
+    <h3>Crear la primera cuenta Jefatura</h3>
+    <p class="q">Esta opción solo aparece porque todavía no existe ninguna cuenta Jefatura — probablemente la
+    configuración inicial se interrumpió antes de crearla. En cuanto la crees, esta opción desaparece.</p>
+    <div class="fgrp"><span class="lab">Nombre</span><input type="text" id="cjNom" placeholder="Ej: Yerko Ardiles"></div>
+    <div class="fgrp"><span class="lab">Correo</span><input type="text" id="cjEmail" placeholder="tu@correo.cl"></div>
+    <div class="f2">
+      <div class="fgrp"><span class="lab">Contraseña (mín. 6 caracteres)</span><input type="password" id="cjPass" autocomplete="new-password"></div>
+      <div class="fgrp"><span class="lab">Repetir contraseña</span><input type="password" id="cjPass2" autocomplete="new-password"></div>
+    </div>
+    <div id="cjMsg" class="authmsg"></div>
+    <div class="mact">
+      <button class="btn g" onclick="cerrarModal()">Cancelar</button>
+      <button class="btn p" id="cjBtn" onclick="crearCuentaJefatura()">Crear cuenta Jefatura</button></div>`);
+  setTimeout(() => document.getElementById("cjNom")?.focus(), 60);
+}
+
 /* ---------- pantalla que llega desde el enlace de recuperación ---------- */
 function vistaRecuperar(){
   app.innerHTML = `
@@ -195,6 +222,23 @@ function vistaRecuperar(){
     <div id="authMsg" class="authmsg"></div>
     <button class="btn p" style="width:100%;padding:12px" onclick="confirmarNuevaContrasena()">Guardar contraseña</button>
   </div></div>`;
+}
+
+/* ---------- cambiar contraseña estando ya logueado (no requiere correo) ---------- */
+function abrirCambiarContrasena(){
+  cerrarMenu();
+  abrirModal(`
+    <h3>Cambiar contraseña</h3>
+    <p class="q">Define una nueva contraseña para tu cuenta (${esc(S.sesion.nombre)}).</p>
+    <div class="fgrp"><span class="lab">Nueva contraseña (mín. 6 caracteres)</span>
+      <input type="password" id="cpPass1" autocomplete="new-password"></div>
+    <div class="fgrp"><span class="lab">Repetir contraseña</span>
+      <input type="password" id="cpPass2" autocomplete="new-password"></div>
+    <div id="cpMsg" class="authmsg"></div>
+    <div class="mact">
+      <button class="btn g" onclick="cerrarModal()">Cancelar</button>
+      <button class="btn p" id="cpBtn" onclick="guardarCambioContrasena()">Guardar</button></div>`);
+  setTimeout(() => document.getElementById("cpPass1")?.focus(), 60);
 }
 
 /* ---------- barra de mes compartida ---------- */
@@ -458,7 +502,7 @@ function etiquetaAccion(a){
     proyecto_archivado:"eliminó el proyecto (archivado)", proyecto_restaurado:"restauró el proyecto",
     item_cerrado:"cerró un ítem", item_reabierto:"reabrió un ítem",
     evidencia_cargada:"cargó una evidencia", acta_generada:"generó el acta de recepción",
-    ingreso:"ingresó a la plataforma", salida:"cerró sesión",
+    ingreso:"ingresó a la plataforma", salida:"cerró sesión", password_cambiado:"cambió su contraseña",
     ingreso_fallido:"intento de ingreso fallido", pin_restablecido:"restableció un PIN",
     configuracion_inicial:"configuración inicial", respaldo_exportado:"exportó un respaldo",
     respaldo_importado:"importó un respaldo", rol_cambiado:"cambió el rol de un usuario",
@@ -530,6 +574,7 @@ function vistaArchivados(){
 /* ---------- USUARIOS (Jefatura) ---------- */
 function vistaUsuarios(){
   const lista = [...S.usuarios].sort((a,b) => a.nombre.localeCompare(b.nombre));
+  const totalJefatura = S.usuarios.filter(u => u.rol === "jefatura").length;
   app.innerHTML = `
   <button class="back" onclick="S.pantalla=null;render()">‹ Volver</button>
   <div class="ph"><div><h1>Usuarios</h1>
@@ -542,7 +587,9 @@ function vistaUsuarios(){
         ${!u.activo ? '<small style="color:var(--bad,#d8453c)">Cuenta inactiva</small>' : ''}</div>
       ${u.rol === "coordinador"
         ? `<button class="evbtn" onclick="cambiarRolUsuario('${u.id}','jefatura')">Ascender a Jefatura</button>`
-        : `<button class="evbtn" onclick="cambiarRolUsuario('${u.id}','coordinador')">Pasar a Coordinador</button>`}
+        : (totalJefatura <= 1
+            ? `<button class="evbtn" disabled title="Es la única cuenta Jefatura: no puede quedar el sistema sin ninguna">Pasar a Coordinador</button>`
+            : `<button class="evbtn" onclick="cambiarRolUsuario('${u.id}','coordinador')">Pasar a Coordinador</button>`)}
     </div>`).join("")}</div>`;
 }
 

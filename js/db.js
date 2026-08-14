@@ -13,6 +13,12 @@ async function existenCuentas(){
   return !!data;
 }
 
+async function existeJefatura(){
+  const { data, error } = await sb.rpc("existe_jefatura");
+  if(error) throw error;
+  return !!data;
+}
+
 async function cargarEstado(){
   await cargarCatalogo();
   await cargarInstaladores();

@@ -8,6 +8,7 @@
 function mensajeError(e){
   const m = e?.message || String(e);
   if(/row-level security/i.test(m)) return "No tienes permiso para hacer esto con tu cuenta.";
+  if(/duplicate key value/i.test(m)) return "Ya existe un registro con ese mismo valor (ej: un nombre repetido).";
   return m;
 }
 
@@ -89,7 +90,7 @@ function formProyecto(id){
               ${INSTALADORES.map(ins => `<option${ins.nombre===v.inst?" selected":""}>${esc(ins.nombre)}</option>`).join("")}
               ${(v.inst && v.inst!=="Por asignar" && !INSTALADORES.some(ins=>ins.nombre===v.inst)) ? `<option selected>${esc(v.inst)}</option>` : ""}
             </select>`
-          : `<input type="text" value="Aún no hay instaladores registrados (Menú → Instaladores)" disabled>`}
+          : `<input type="text" value="Aún no hay instaladores registrados (Menú → Instaladores)" disabled title="El proyecto queda sin instalador asignado hasta que agregues uno a la lista">`}
       </div>
     </div>
     ${!puedeFechasTipo ? `<div class="warnbox" style="margin:14px 0 0">Como Coordinador puedes editar nombre, cliente, comuna e instalador.

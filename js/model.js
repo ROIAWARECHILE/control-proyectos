@@ -27,6 +27,7 @@ let INSTALADORES = [];
 /* ---------- estado global de la aplicación ---------- */
 const S = {
   hayCuentas: null,      // null = aún no se sabe · true/false tras consultar Supabase
+  hayJefatura: null,     // null = aún no se sabe · false habilita "crear la primera cuenta Jefatura" en el login
   recuperando: false,    // true = llegó desde el enlace de "recuperar contraseña"
   usuarios: [],          // perfiles (profiles) visibles para el usuario autenticado
   proyectos: [],         // cache de proyectos visibles según el rol (RLS)

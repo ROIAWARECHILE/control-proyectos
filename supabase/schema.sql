@@ -35,7 +35,11 @@ drop index if exists public.profiles_rol_unico;
 create or replace function public.handle_new_user()
 returns trigger language plpgsql security definer set search_path = public as $$
 declare
-  rol_solicitado text := coalesce(new.raw_user_meta_data->>'rol', 'coordinador');
+  -- Cualquier valor que no sea exactamente 'jefatura' cae a 'coordinador'
+  -- (incluye null y cualquier texto arbitrario que alguien mande a mano
+  -- fuera de la UI) — evita que un metadato inválido tumbe el registro
+  -- entero con un error crudo del check de profiles.rol.
+  rol_solicitado text := case when new.raw_user_meta_data->>'rol' = 'jefatura' then 'jefatura' else 'coordinador' end;
   rol_final text;
 begin
   if rol_solicitado = 'jefatura' and exists(select 1 from public.profiles where rol = 'jefatura') then
@@ -67,10 +71,27 @@ returns boolean language sql stable security definer set search_path = public as
 $$;
 grant execute on function public.existen_cuentas() to anon, authenticated;
 
+-- Igual que existen_cuentas(), pero específico para Jefatura: le permite a
+-- la pantalla de ingreso ofrecer "crear la primera cuenta Jefatura" si la
+-- configuración inicial se interrumpió (coordinador creado, jefatura no) y
+-- no quedó ningún camino en la interfaz para crearla (asignar_rol exige ya
+-- estar logueado como Jefatura). Deja de ser necesario en cuanto exista una.
+create or replace function public.existe_jefatura()
+returns boolean language sql stable security definer set search_path = public as $$
+  select exists(select 1 from public.profiles where rol = 'jefatura');
+$$;
+grant execute on function public.existe_jefatura() to anon, authenticated;
+
 -- Cambia el rol de un usuario existente. Solo Jefatura puede llamarla
 -- (verificado server-side, no solo en la interfaz): es el mecanismo para
 -- "invitar" a alguien como Jefatura sin exponer un endpoint de autorregistro
 -- que cualquiera pueda usar para autoasignarse el rol.
+-- Nunca deja el sistema en cero Jefaturas: eso reabriría, para cualquier
+-- autorregistro público, la ventana de arranque que handle_new_user() usa
+-- para crear la primera cuenta de Jefatura (rol_solicitado='jefatura'
+-- permitido solo mientras no exista ninguna) — sin esta protección,
+-- vaciar la última Jefatura sería una vía para que cualquiera se
+-- autoasigne el rol registrándose justo después.
 create or replace function public.asignar_rol(usuario_id uuid, nuevo_rol text)
 returns void language plpgsql security definer set search_path = public as $$
 begin
@@ -79,6 +100,11 @@ begin
   end if;
   if nuevo_rol not in ('coordinador','jefatura') then
     raise exception 'Rol inválido: %', nuevo_rol;
+  end if;
+  if nuevo_rol <> 'jefatura'
+     and exists(select 1 from public.profiles where id = usuario_id and rol = 'jefatura')
+     and (select count(*) from public.profiles where rol = 'jefatura') <= 1 then
+    raise exception 'No puedes quitarle el rol de Jefatura a la última cuenta que lo tiene.';
   end if;
   update public.profiles set rol = nuevo_rol where id = usuario_id;
 end;
@@ -459,11 +485,18 @@ create index if not exists notificaciones_destinatario_idx on public.notificacio
 -- Único punto de entrada para crear notificaciones: nunca se insertan
 -- directo desde el cliente (así no hay que confiar en qué destinatario_id
 -- mande el navegador). Avisa a TODAS las cuentas Jefatura, sean cuantas
--- sean, cuando un Coordinador cierra un ítem.
+-- sean, cuando un Coordinador cierra un ítem de UN PROYECTO PROPIO — sin
+-- esta verificación, cualquier Coordinador podría invocar el RPC directo
+-- (sin pasar por la UI) con el proyecto_id de otro y un mensaje inventado.
 create or replace function public.notificar_item_cerrado(p_proyecto_id text, p_mensaje text)
 returns void language plpgsql security definer set search_path = public as $$
 begin
   if public.mi_rol() <> 'coordinador' then
+    return;
+  end if;
+  if not exists (
+    select 1 from public.proyectos where id = p_proyecto_id and coordinador_id = auth.uid()
+  ) then
     return;
   end if;
   insert into public.notificaciones (destinatario_id, tipo, proyecto_id, mensaje)
