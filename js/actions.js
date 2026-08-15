@@ -44,8 +44,6 @@ function formProyecto(id){
                   inicio: ymd(H), termino: ymd(addD(H,10))};
   const cerrados = p ? itemsDe(p).filter(i => p.av[i.id]?.ok).length : 0;
   const puedeFechasTipo = esJefatura();   // §2: el Coordinador no edita fechas ni tipo
-  const coordinadores = S.usuarios.filter(u => u.rol === "coordinador");
-  const coordActual = p ? p.coordinadorId : (coordinadores[0]?.id || "");
 
   abrirModal(`
     <h3>${p ? `Editar proyecto ${p.id}` : "Crear proyecto"}</h3>
@@ -72,14 +70,6 @@ function formProyecto(id){
       <div><span class="lab">Fecha de término ${puedeFechasTipo?'*':''}</span>
         ${puedeFechasTipo ? `<input type="date" id="fFin" value="${v.termino}">`
                           : `<input type="text" value="${fdate(v.termino)}" disabled>`}</div>
-
-      <div style="grid-column:1/-1"><span class="lab">Coordinador a cargo ${puedeFechasTipo?'*':''}</span>
-        ${puedeFechasTipo
-          ? (coordinadores.length
-              ? `<select id="fCoord">${coordinadores.map(u => `<option value="${u.id}"${u.id===coordActual?" selected":""}>${esc(u.nombre)}</option>`).join("")}</select>`
-              : `<input type="text" value="Aún no hay coordinadores registrados" disabled>`)
-          : `<input type="text" value="${esc(p?.coord || "Sin asignar")}" disabled title="Solo Jefatura puede reasignar el coordinador">`}
-      </div>
 
       <div><span class="lab">Cliente</span><input type="text" id="fCli" value="${esc(v.cliente==="Por definir"?"":v.cliente)}" placeholder="Opcional"></div>
       <div><span class="lab">Comuna / ubicación</span><input type="text" id="fCom" value="${esc(v.comuna==="—"?"":v.comuna)}" placeholder="Opcional"></div>
@@ -113,12 +103,14 @@ async function guardarProyecto(id){
   const nom = g("fNom");
   if(!nom) return err("Ingresa el nombre del proyecto.");
   const puedeFechasTipo = esJefatura();
-  let ini, fin, tipo, coordinadorId, linea;
+  // Hoy hay un único Coordinador de planta: se asigna solo, sin pedirlo en el
+  // formulario. Si más adelante hay más de uno, esto vuelve a ser un selector.
+  const coordinadorId = S.usuarios.find(u => u.rol === "coordinador")?.id || null;
+  let ini, fin, tipo, linea;
   if(puedeFechasTipo){
     ini = g("fIni"); fin = g("fFin"); tipo = g("fTipo");
     if(!ini || !fin) return err("Ingresa las fechas de inicio y término.");
     if(fin < ini) return err("La fecha de término no puede ser anterior a la de inicio.");
-    coordinadorId = document.getElementById("fCoord")?.value || null;
     linea = tipo === "Piscina" ? g("fLinea") : null;
     if(tipo === "Piscina" && !linea) return err("Selecciona la línea: SWIM o SMARTPOOLS.");
   }
