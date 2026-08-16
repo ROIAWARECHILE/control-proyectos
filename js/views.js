@@ -482,8 +482,9 @@ function filaItem(p,i,ro){
   const a = p.av[i.id];
   const hist = (p.avArchivado || []).filter(h => h.itemId === i.id);
   const ev = a?.evidenciaId ? S.evCache.get(a.evidenciaId) : null;
+  const libre = i.ev !== "obligatoria";   // opcional: check directo, sin popup (obligatorio: popup de siempre)
   return `<div class="item ${a?.ok?'done':''}">
-    <button class="cb ${a?.ok?'on':''}" ${ro?'disabled':`onclick="toggle('${i.id}')"`}
+    <button class="cb ${a?.ok?'on':''}" ${ro?'disabled':`onclick="${libre?`toggleLibre('${i.id}')`:`toggle('${i.id}')`}"`}
       title="${a?.ok ? (ro?'':'Reabrir ítem') : (ro?'':'Registrar cumplimiento')}">${a?.ok?'✓':''}</button>
     <div class="itxt"><span class="inum">${i.id}</span>${esc(i.x)}
       ${i.ev==="obligatoria"?'<span class="req">Requiere evidencia</span>':''}
@@ -493,7 +494,9 @@ function filaItem(p,i,ro){
       ${hist.length?`<button class="histlink" onclick="verHistorial('${i.id}')">Ver historial del ítem (${hist.length})</button>`:''}
     </div>
     ${ev ? `<img class="thumb" src="${ev.url}" title="Ver evidencia" onclick="verEvidencia('${a.evidenciaId}')">`
-         : (a?.ok || ro) ? "" : `<button class="evbtn" onclick="toggle('${i.id}')">${i.ev==="obligatoria"?'Adjuntar evidencia':'Registrar'}</button>`}
+         : ro ? ""
+         : libre ? `<button class="evbtn" onclick="abrirDetalleOpcional('${i.id}')">${a?.ok?'＋ Evidencia/nota':'＋ Adjuntar (opcional)'}</button>`
+         : (a?.ok ? "" : `<button class="evbtn" onclick="toggle('${i.id}')">Adjuntar evidencia</button>`)}
   </div>`;
 }
 

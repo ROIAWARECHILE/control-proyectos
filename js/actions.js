@@ -208,6 +208,9 @@ async function restaurarProyecto(id){
 /* ---------- registro de ítems ---------- */
 let TMP = {};
 
+/* Ítems obligatorios (RN-1): abre el popup de siempre, con evidencia
+   requerida para poder cerrar. Ítems opcionales usan toggleLibre() /
+   abrirDetalleOpcional() en su lugar — ver más abajo. */
 function toggle(itemId){
   if(RO()) return;
   const p = S.proyectos.find(x => x.id === S.abierto);
@@ -294,29 +297,46 @@ function obtenerGeo(){
   });
 }
 
+/* archiva el registro vigente de un ítem (RN-3: nunca se borra, solo se archiva) */
+async function archivarVigente(p, itemId, motivo){
+  await reabrirAvanceDB(p.id, itemId, motivo);
+  const a = p.av[itemId];
+  p.avArchivado = p.avArchivado || [];
+  p.avArchivado.push({itemId, ...a, archivadoTs:new Date().toISOString(), motivo});
+  delete p.av[itemId];
+}
+
+/* cierra un ítem con nota/evidencia (ambas opcionales salvo que el llamador
+   ya haya validado lo contrario). Si el ítem ya estaba cerrado, archiva el
+   registro anterior primero — mismo criterio que reabrirItem(). Usada tanto
+   por el popup de ítems obligatorios como por el flujo libre de opcionales. */
+async function cerrarItemConDetalle(p, itemId, {nota, blob, conPrevias}){
+  if(p.av[itemId]?.ok) await archivarVigente(p, itemId, "Actualizado con nueva evidencia/observación");
+
+  const geo = await obtenerGeo();
+  const ahora = new Date().toISOString();
+  let evidenciaId = null;
+  if(blob){
+    const registro = await subirEvidenciaDB(p.id, itemId, blob);
+    evidenciaId = registro.id;
+    S.evCache.set(evidenciaId, {url: URL.createObjectURL(blob), meta: {ts: registro.ts, user: registro.usuario_nombre, hash: registro.hash_sha256}});
+    await audit("evidencia_cargada", `Ítem ${itemId}`, p.id);
+  }
+
+  await registrarAvanceDB(p.id, itemId, {nota, evidenciaId, geo, conPrevias: !!conPrevias});
+  p.av[itemId] = {ok:true, ts:ahora, user:S.sesion.nombre, nota, evidenciaId, geo};
+  await audit("item_cerrado", `Ítem ${itemId}${conPrevias ? " · con etapas anteriores incompletas (RN-4)" : ""}${nota ? " · con observación" : ""}`, p.id);
+  await cargarAuditoria(p.id);
+  await notificarItemCerrado(p.id, `${S.sesion.nombre} cerró el ítem ${itemId} en ${p.nombre}`);
+}
+
 async function confirmarItem(){
   const btn = document.getElementById("okBtn");
   btn.disabled = true; btn.textContent = "Guardando…";
   const p = S.proyectos.find(x => x.id === S.abierto);
   const nota = document.getElementById("nota").value.trim();
-
   try{
-    const geo = await obtenerGeo();
-    const ahora = new Date().toISOString();
-
-    let evidenciaId = null;
-    if(TMP.blob){
-      const registro = await subirEvidenciaDB(p.id, TMP.itemId, TMP.blob);
-      evidenciaId = registro.id;
-      S.evCache.set(evidenciaId, {url: URL.createObjectURL(TMP.blob), meta: {ts: registro.ts, user: registro.usuario_nombre, hash: registro.hash_sha256}});
-      await audit("evidencia_cargada", `Ítem ${TMP.itemId}`, p.id);
-    }
-
-    await registrarAvanceDB(p.id, TMP.itemId, {nota, evidenciaId, geo, conPrevias: TMP.conPrevias});
-    p.av[TMP.itemId] = {ok:true, ts:ahora, user:S.sesion.nombre, nota, evidenciaId, geo};
-    await audit("item_cerrado", `Ítem ${TMP.itemId}${TMP.conPrevias ? " · con etapas anteriores incompletas (RN-4)" : ""}${nota ? " · con observación" : ""}`, p.id);
-    await cargarAuditoria(p.id);
-    await notificarItemCerrado(p.id, `${S.sesion.nombre} cerró el ítem ${TMP.itemId} en ${p.nombre}`);
+    await cerrarItemConDetalle(p, TMP.itemId, {nota, blob: TMP.blob, conPrevias: TMP.conPrevias});
     TMP = {};
     cerrarModal(); toast("Ítem registrado con sello de fecha, hora y usuario"); render();
   }catch(e){
@@ -328,17 +348,84 @@ async function confirmarItem(){
 
 async function reabrirItem(itemId){
   const p = S.proyectos.find(x => x.id === S.abierto);
-  const a = p.av[itemId];
-  if(!a) return cerrarModal();
+  if(!p.av[itemId]) return cerrarModal();
   try{
-    await reabrirAvanceDB(p.id, itemId, "Ítem reabierto por el coordinador");
-    p.avArchivado = p.avArchivado || [];
-    p.avArchivado.push({itemId, ...a, archivadoTs:new Date().toISOString(), motivo:"Ítem reabierto por el coordinador"});
-    delete p.av[itemId];
+    await archivarVigente(p, itemId, "Ítem reabierto por el coordinador");
     await audit("item_reabierto", `Ítem ${itemId} · el registro anterior quedó en el historial`, p.id);
     await cargarAuditoria(p.id);
     cerrarModal(); toast("Ítem reabierto. El registro anterior quedó en el historial."); render();
   }catch(e){ console.error(e); cerrarModal(); toast(mensajeError(e)); }
+}
+
+/* ---------- ítems opcionales: check libre, sin popup ---------- */
+/* clic directo en el checkbox: cierra/reabre al instante, sin evidencia ni
+   observación. Los ítems obligatorios nunca llegan aquí (ver filaItem en
+   views.js) — siguen pasando por toggle() y su popup de siempre. */
+async function toggleLibre(itemId){
+  if(RO()) return;
+  const p = S.proyectos.find(x => x.id === S.abierto);
+  const it = itemsDe(p).find(i => i.id === itemId);
+  if(!it || it.ev === "obligatoria") return;
+
+  if(p.av[itemId]?.ok){
+    try{
+      await archivarVigente(p, itemId, "Ítem reabierto por el coordinador");
+      await audit("item_reabierto", `Ítem ${itemId} · el registro anterior quedó en el historial`, p.id);
+      await cargarAuditoria(p.id);
+      render();
+    }catch(e){ console.error(e); toast(mensajeError(e)); }
+    return;
+  }
+
+  const etapa = p.checklist.etapas.find(e => e.items.some(i => i.id === itemId));
+  const conPrevias = p.checklist.etapas.filter(x => x.n < etapa.n).some(x => pctEtapa(p,x) < 100);
+  try{
+    await cerrarItemConDetalle(p, itemId, {nota:"", blob:null, conPrevias});
+    render();
+  }catch(e){ console.error(e); toast(mensajeError(e)); }
+}
+
+/* botón "＋ evidencia/nota": mismo popup de siempre pero sin exigir nada
+   (el checkbox ya no depende de esto) y disponible aunque el ítem ya esté
+   cerrado, para agregar o reemplazar su evidencia/observación después. */
+function abrirDetalleOpcional(itemId){
+  if(RO()) return;
+  const p = S.proyectos.find(x => x.id === S.abierto);
+  const it = itemsDe(p).find(i => i.id === itemId);
+  if(!it || it.ev === "obligatoria") return;
+
+  TMP = {itemId, blob:null};
+  const actual = p.av[itemId];
+  abrirModal(`
+    <h3>Ítem ${esc(itemId)}</h3><p class="q">${esc(it.x)}</p>
+    ${actual?.ok ? `<div class="warnbox">Este ítem ya está marcado como cumplido. Guardar aquí reemplaza su
+      evidencia y observación; el registro anterior queda archivado en el historial del ítem (RN-3).</div>` : ''}
+    <span class="lab">Evidencia (opcional)</span>
+    <div class="filebtns">
+      <button onclick="document.getElementById('fileCam').click()">📷 Tomar foto</button>
+      <button onclick="document.getElementById('fileGal').click()">🖼 Desde galería</button>
+    </div>
+    <div class="drop" id="drop">Aún no hay evidencia adjunta<br><small>Foto o pantallazo (opcional)</small></div>
+    <span class="lab">Observación</span>
+    <textarea id="nota" rows="3" placeholder="Comentario del coordinador (opcional)">${esc(actual?.nota || "")}</textarea>
+    <div class="mact"><button class="btn g" onclick="cerrarModal()">Cancelar</button>
+    <button class="btn p" id="okBtn" onclick="confirmarDetalleOpcional()">Guardar</button></div>`);
+}
+
+async function confirmarDetalleOpcional(){
+  const btn = document.getElementById("okBtn");
+  btn.disabled = true; btn.textContent = "Guardando…";
+  const p = S.proyectos.find(x => x.id === S.abierto);
+  const nota = document.getElementById("nota").value.trim();
+  try{
+    await cerrarItemConDetalle(p, TMP.itemId, {nota, blob: TMP.blob});
+    TMP = {};
+    cerrarModal(); toast("Guardado"); render();
+  }catch(e){
+    console.error(e);
+    btn.disabled = false; btn.textContent = "Guardar";
+    toast(mensajeError(e));
+  }
 }
 
 /* ---------- acta (RN-8) ---------- */
