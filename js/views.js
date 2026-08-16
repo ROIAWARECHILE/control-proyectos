@@ -262,11 +262,12 @@ function vistaCoordinador(){
   if(!activos().length){
     app.innerHTML = `
     <div class="ph"><div><h1>Mis proyectos</h1>
-      <p class="sub" style="margin:0">Programación mensual del coordinador</p></div></div>
+      <p class="sub" style="margin:0">Programación mensual del coordinador</p></div>
+      <button class="btn p" onclick="nuevoProyecto()">+ Crear proyecto</button></div>
     <div class="card hero">
       <div class="big">📋</div>
-      <h2>Aún no tienes proyectos asignados</h2>
-      <p>Jefatura crea los proyectos y te asigna como coordinador; en cuanto lo haga aparecerán aquí.</p>
+      <h2>Aún no tienes proyectos</h2>
+      <p>Crea tu primer proyecto o espera a que Jefatura te asigne uno; en cuanto exista aparecerá aquí.</p>
     </div>`;
     return;
   }
@@ -283,7 +284,7 @@ function vistaCoordinador(){
   <div class="ph"><div>
     <h1>Mis proyectos</h1>
     <p class="sub" style="margin:0">Programación mensual del coordinador · hasta ${MAXLANE} proyectos simultáneos por día.</p>
-  </div></div>
+  </div><button class="btn p" onclick="nuevoProyecto()">+ Crear proyecto</button></div>
   ${barraMes(`
     <div class="resumen">${resumen}</div>
     <div style="flex:1"></div>
@@ -387,7 +388,7 @@ function vistaJefatura(){
   <div class="ph"><div>
     <h1>Dashboard</h1>
     <p class="sub" style="margin:0">Avance en tiempo real de la coordinación de proyectos · hoy es ${H.toLocaleDateString("es-CL",{weekday:"long",day:"numeric",month:"long",year:"numeric"})}</p>
-  </div>${esJefatura() ? `<button class="btn p" onclick="nuevoProyecto()">+ Crear proyecto</button>` : ""}</div>
+  </div><button class="btn p" onclick="nuevoProyecto()">+ Crear proyecto</button></div>
   ${barraMes(`
     <div class="resumen"><span class="cnt ${lista.length?'':'vacio'}">${lista.length
       ? `<b>${lista.length}</b> proyecto${lista.length===1?'':'s'} en ${MESES[S.mes.m]}`

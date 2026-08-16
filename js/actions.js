@@ -30,11 +30,13 @@ async function abrir(id, etapa){
   render(); window.scrollTo(0,0);
 }
 
-/* ---------- crear / editar proyecto ---------- */
-function nuevoProyecto(){
-  if(!esJefatura()) return toast("Solo Jefatura puede crear proyectos.");
-  formProyecto(null);
-}
+/* ---------- crear / editar proyecto ----------
+   Decisión de negocio: el Coordinador también crea proyectos y edita
+   fechas/tipo/línea de los suyos (ya no es exclusivo de Jefatura como
+   decía la especificación original) — es quien los ingresa en terreno.
+   Lo único que sigue siendo solo de Jefatura es reasignar el proyecto a
+   otro coordinador (protegido server-side, ver proyecto_restringir_edicion). */
+function nuevoProyecto(){ formProyecto(null); }
 function editarProyecto(id, ev){ if(ev) ev.stopPropagation(); formProyecto(id); }
 
 function formProyecto(id){
@@ -43,7 +45,9 @@ function formProyecto(id){
   const v = p || {nombre:"", cliente:"", tipo:TIPOS[0], linea:LINEAS_PISCINA[0], comuna:"", inst:"",
                   inicio: ymd(H), termino: ymd(addD(H,10))};
   const cerrados = p ? itemsDe(p).filter(i => p.av[i.id]?.ok).length : 0;
-  const puedeFechasTipo = esJefatura();   // §2: el Coordinador no edita fechas ni tipo
+  const jefatura = esJefatura();
+  const coordinadores = S.usuarios.filter(u => u.rol === "coordinador");
+  const coordActual = p ? p.coordinadorId : (jefatura ? (coordinadores[0]?.id || "") : S.sesion.userId);
 
   abrirModal(`
     <h3>${p ? `Editar proyecto ${p.id}` : "Crear proyecto"}</h3>
@@ -53,23 +57,23 @@ function formProyecto(id){
       <div style="grid-column:1/-1"><span class="lab">Nombre del proyecto *</span>
         <input type="text" id="fNom" value="${esc(v.nombre)}" placeholder="Ej: Piscina Familia Rojas"></div>
 
-      <div style="grid-column:1/-1"><span class="lab">Tipo de proyecto ${puedeFechasTipo?'*':''}</span>
-        ${puedeFechasTipo
-          ? `<select id="fTipo" onchange="document.getElementById('fLineaWrap').style.display = this.value==='Piscina' ? 'block' : 'none'">${TIPOS.map(t => `<option${t===v.tipo?" selected":""}>${t}</option>`).join("")}</select>`
-          : `<input type="text" value="${esc(v.tipo)}" disabled title="Solo Jefatura puede cambiar el tipo de proyecto">`}
+      <div style="grid-column:1/-1"><span class="lab">Tipo de proyecto *</span>
+        <select id="fTipo" onchange="document.getElementById('fLineaWrap').style.display = this.value==='Piscina' ? 'block' : 'none'">${TIPOS.map(t => `<option${t===v.tipo?" selected":""}>${t}</option>`).join("")}</select>
       </div>
       <div style="grid-column:1/-1;display:${v.tipo==='Piscina'?'block':'none'}" id="fLineaWrap">
-        <span class="lab">Línea ${puedeFechasTipo?'*':''}</span>
-        ${puedeFechasTipo
-          ? `<select id="fLinea">${LINEAS_PISCINA.map(l => `<option${l===v.linea?" selected":""}>${l}</option>`).join("")}</select>`
-          : `<input type="text" value="${esc(v.linea || '—')}" disabled title="Solo Jefatura puede cambiar la línea">`}
+        <span class="lab">Línea *</span>
+        <select id="fLinea">${LINEAS_PISCINA.map(l => `<option${l===v.linea?" selected":""}>${l}</option>`).join("")}</select>
       </div>
-      <div><span class="lab">Fecha de inicio ${puedeFechasTipo?'*':''}</span>
-        ${puedeFechasTipo ? `<input type="date" id="fIni" value="${v.inicio}">`
-                          : `<input type="text" value="${fdate(v.inicio)}" disabled>`}</div>
-      <div><span class="lab">Fecha de término ${puedeFechasTipo?'*':''}</span>
-        ${puedeFechasTipo ? `<input type="date" id="fFin" value="${v.termino}">`
-                          : `<input type="text" value="${fdate(v.termino)}" disabled>`}</div>
+      <div><span class="lab">Fecha de inicio *</span><input type="date" id="fIni" value="${v.inicio}"></div>
+      <div><span class="lab">Fecha de término *</span><input type="date" id="fFin" value="${v.termino}"></div>
+
+      <div style="grid-column:1/-1"><span class="lab">Coordinador a cargo</span>
+        ${jefatura
+          ? (coordinadores.length
+              ? `<select id="fCoord">${coordinadores.map(u => `<option value="${u.id}"${u.id===coordActual?" selected":""}>${esc(u.nombre)}</option>`).join("")}</select>`
+              : `<input type="text" value="Aún no hay coordinadores registrados" disabled>`)
+          : `<input type="text" value="${esc(p?.coord || S.sesion.nombre)}" disabled title="Solo Jefatura puede reasignar el coordinador de un proyecto">`}
+      </div>
 
       <div><span class="lab">Cliente</span><input type="text" id="fCli" value="${esc(v.cliente==="Por definir"?"":v.cliente)}" placeholder="Opcional"></div>
       <div><span class="lab">Comuna / ubicación</span><input type="text" id="fCom" value="${esc(v.comuna==="—"?"":v.comuna)}" placeholder="Opcional"></div>
@@ -83,9 +87,7 @@ function formProyecto(id){
           : `<input type="text" value="Aún no hay instaladores registrados (Menú → Instaladores)" disabled title="El proyecto queda sin instalador asignado hasta que agregues uno a la lista">`}
       </div>
     </div>
-    ${!puedeFechasTipo ? `<div class="warnbox" style="margin:14px 0 0">Como Coordinador puedes editar nombre, cliente, comuna e instalador.
-      Fechas y tipo de proyecto los cambia Jefatura (Especificación §2).</div>` : ''}
-    ${p && cerrados && puedeFechasTipo ? `<div class="warnbox" style="margin:14px 0 0">Este proyecto tiene ${cerrados} ítem(s) cerrados.
+    ${p && cerrados ? `<div class="warnbox" style="margin:14px 0 0">Este proyecto tiene ${cerrados} ítem(s) cerrados.
       Si cambias el tipo de proyecto, el checklist se ajusta: los ítems que dejen de aplicar salen del cálculo de
       avance y quedan archivados en el historial con su evidencia (RN-12).</div>` : ''}
     <div id="fMsg" class="warnbox" style="display:none;margin:14px 0 0;background:#fde8e6;color:#8c211a"></div>
@@ -102,18 +104,14 @@ async function guardarProyecto(id){
 
   const nom = g("fNom");
   if(!nom) return err("Ingresa el nombre del proyecto.");
-  const puedeFechasTipo = esJefatura();
-  // Hoy hay un único Coordinador de planta: se asigna solo, sin pedirlo en el
-  // formulario. Si más adelante hay más de uno, esto vuelve a ser un selector.
-  const coordinadorId = S.usuarios.find(u => u.rol === "coordinador")?.id || null;
-  let ini, fin, tipo, linea;
-  if(puedeFechasTipo){
-    ini = g("fIni"); fin = g("fFin"); tipo = g("fTipo");
-    if(!ini || !fin) return err("Ingresa las fechas de inicio y término.");
-    if(fin < ini) return err("La fecha de término no puede ser anterior a la de inicio.");
-    linea = tipo === "Piscina" ? g("fLinea") : null;
-    if(tipo === "Piscina" && !linea) return err("Selecciona la línea: SWIM o SMARTPOOLS.");
-  }
+  const ini = g("fIni"), fin = g("fFin"), tipo = g("fTipo");
+  if(!ini || !fin) return err("Ingresa las fechas de inicio y término.");
+  if(fin < ini) return err("La fecha de término no puede ser anterior a la de inicio.");
+  const linea = tipo === "Piscina" ? g("fLinea") : null;
+  if(tipo === "Piscina" && !linea) return err("Selecciona la línea: SWIM o SMARTPOOLS.");
+  const jefatura = esJefatura();
+  // Solo Jefatura reasigna el coordinador; el Coordinador siempre crea/edita para sí mismo (RLS lo exige igual).
+  const coordinadorId = jefatura ? (document.getElementById("fCoord")?.value || null) : S.sesion.userId;
 
   btn.disabled = true; btn.textContent = "Guardando…";
   try{
@@ -122,27 +120,27 @@ async function guardarProyecto(id){
       const cambios = [];
       let actualizado = p;
 
-      if(puedeFechasTipo && tipo !== p.tipo){
+      if(tipo !== p.tipo){
         cambios.push(`tipo ${p.tipo} → ${tipo}`);
         actualizado = await cambiarTipoProyectoDB(p, tipo);
       }
-      const camposComunes = {nombre:nom, cliente:g("fCli")||"Por definir", comuna:g("fCom")||"—", instalador:g("fInst")||"Por asignar"};
-      if(puedeFechasTipo){
-        camposComunes.fecha_inicio = ini; camposComunes.fecha_termino = fin;
-        camposComunes.coordinador_id = coordinadorId; camposComunes.linea_piscina = linea;
-      }
-      if(puedeFechasTipo && (ini !== p.inicio || fin !== p.termino)) cambios.push(`fechas ${ini} al ${fin}`);
-      if(puedeFechasTipo && coordinadorId !== p.coordinadorId){
+      const camposComunes = {
+        nombre:nom, cliente:g("fCli")||"Por definir", comuna:g("fCom")||"—", instalador:g("fInst")||"Por asignar",
+        fecha_inicio: ini, fecha_termino: fin, linea_piscina: linea
+      };
+      if(jefatura) camposComunes.coordinador_id = coordinadorId;
+      if(ini !== p.inicio || fin !== p.termino) cambios.push(`fechas ${ini} al ${fin}`);
+      if(jefatura && coordinadorId !== p.coordinadorId){
         const nuevo = S.usuarios.find(u => u.id === coordinadorId);
         cambios.push(`coordinador ${p.coord} → ${nuevo ? nuevo.nombre : "Sin asignar"}`);
       }
-      if(puedeFechasTipo && linea !== p.linea) cambios.push(`línea ${p.linea || "—"} → ${linea || "—"}`);
+      if(linea !== p.linea) cambios.push(`línea ${p.linea || "—"} → ${linea || "—"}`);
       actualizado = await actualizarProyectoDB(id, camposComunes);
 
       fusionarProyecto(p, actualizado);
       await audit("proyecto_editado", cambios.join(" · ") || "datos generales", p.id);
       cerrarModal(); toast(`Proyecto ${p.id} actualizado`);
-      if(puedeFechasTipo) S.mes = {y: d(p.inicio).getFullYear(), m: d(p.inicio).getMonth()};
+      S.mes = {y: d(p.inicio).getFullYear(), m: d(p.inicio).getMonth()};
       if(S.abierto === p.id) await Promise.all([cargarChecklist(p.id), cargarEvidencias(p.id), cargarAuditoria(p.id)]);
     }else{
       const p = await crearProyectoDB({nombre:nom, cliente:g("fCli")||"Por definir", tipo, linea,

@@ -158,22 +158,18 @@ begin
   end if;
 end $$;
 
--- RN-4/RN-12: el Coordinador no puede editar fechas, tipo, línea de piscina
--- ni reasignar el proyecto (§2). Solo Jefatura puede. El checklist se
--- recalcula server-side si cambia el tipo (ver función siguiente); aquí
--- solo se protege el campo.
+-- Decisión de negocio (ya no la de la especificación original §2): el
+-- Coordinador SÍ puede crear proyectos y editar fechas/tipo/línea de los
+-- suyos — es quien los ingresa en terreno. Lo único que sigue siendo
+-- exclusivo de Jefatura es reasignar el proyecto a otro coordinador (RLS
+-- de "select"/"update" ya limita esto a "los proyectos propios" de todas
+-- formas). El checklist se recalcula server-side si cambia el tipo (ver
+-- función siguiente); aquí solo se protege el campo coordinador_id.
 create or replace function public.proyecto_restringir_edicion()
 returns trigger language plpgsql as $$
 begin
-  if public.mi_rol() <> 'jefatura' then
-    if new.fecha_inicio is distinct from old.fecha_inicio
-       or new.fecha_termino is distinct from old.fecha_termino
-       or new.tipo is distinct from old.tipo
-       or new.linea_piscina is distinct from old.linea_piscina
-       or new.checklist is distinct from old.checklist
-       or new.coordinador_id is distinct from old.coordinador_id then
-      raise exception 'El Coordinador no puede editar fechas, tipo o coordinador asignado (Especificación §2).';
-    end if;
+  if public.mi_rol() <> 'jefatura' and new.coordinador_id is distinct from old.coordinador_id then
+    raise exception 'Solo Jefatura puede reasignar el coordinador de un proyecto.';
   end if;
   new.updated_at := now();
   return new;
@@ -190,10 +186,16 @@ create policy "proyectos: ver propios o todos si jefatura"
   on public.proyectos for select to authenticated
   using (public.mi_rol() = 'jefatura' or coordinador_id = auth.uid());
 
+-- Jefatura crea para cualquiera; Coordinador solo puede crear asignándose
+-- el proyecto a sí mismo (nunca a otro coordinador).
 drop policy if exists "proyectos: crear solo jefatura" on public.proyectos;
-create policy "proyectos: crear solo jefatura"
+drop policy if exists "proyectos: crear jefatura o coordinador para si mismo" on public.proyectos;
+create policy "proyectos: crear jefatura o coordinador para si mismo"
   on public.proyectos for insert to authenticated
-  with check (public.mi_rol() = 'jefatura');
+  with check (
+    public.mi_rol() = 'jefatura'
+    or (public.mi_rol() = 'coordinador' and coordinador_id = auth.uid())
+  );
 
 drop policy if exists "proyectos: editar propios o todos si jefatura" on public.proyectos;
 create policy "proyectos: editar propios o todos si jefatura"

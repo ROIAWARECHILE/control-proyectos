@@ -16,7 +16,7 @@ No tengo permiso para ejecutar SQL directamente en tu proyecto `djgrqunkbrppcqhf
 2. Abre `app/supabase/schema.sql` de esta entrega, copia **todo** el contenido, pégalo en el editor y presiona **Run**. Crea las tablas, la seguridad (RLS), los disparadores de integridad y el bucket de evidencias. Es seguro volver a ejecutarlo si algo falla a mitad de camino: corrígelo y vuelve a correr el archivo completo.
 3. (Opcional, reduce fricción) **Authentication → Sign In / Providers → Email** → desactiva **"Confirm email"**. Si lo dejas activado, cada cuenta deberá abrir el correo de confirmación antes de su primer ingreso — funciona igual, solo es un paso extra.
 4. Abre `app/index.html` con doble clic (Chrome o Edge). Te pedirá crear las dos cuentas: **Coordinador** (registra avances y evidencias) y **Jefatura** (crea proyectos, supervisa). Cada una con su correo y contraseña.
-5. Ingresa como Jefatura y crea el primer proyecto — es la única cuenta que puede crear proyectos (ver más abajo). Luego ingresa como Coordinador para registrar el checklist.
+5. Ingresa como Jefatura o como Coordinador y crea el primer proyecto — ambos roles pueden crear proyectos y registrar el checklist (ver más abajo).
 
 Si algo falla en este paso, avísame el mensaje de error del SQL Editor y lo corrijo de inmediato.
 
@@ -115,21 +115,25 @@ las tarjetas, el detalle y la tabla de Jefatura.
 
 Vuelve a ejecutar `supabase/schema.sql` completo para agregar la columna `linea_piscina` a `proyectos`.
 
-## Qué cambió respecto a la versión local: roles reales
+## Roles y permisos (ya no calcan literal la especificación §2)
 
-La especificación (§2) es más estricta de lo que tenía la versión anterior, y ahora se aplica de verdad — no solo en la interfaz, sino en la base de datos, así que no se puede saltar:
+Todo se aplica de verdad server-side (RLS), no solo en la interfaz, así que no se puede saltar:
 
 | Acción | Coordinador | Jefatura |
 |---|---|---|
 | Ver proyectos | Solo los suyos | Todos |
-| Crear proyecto | No | Sí |
-| Editar fechas / tipo de proyecto | No | Sí |
+| Crear proyecto | Sí (queda como dueño) | Sí (para cualquiera) |
+| Reasignar el coordinador de un proyecto | No | Sí |
+| Editar fechas / tipo / línea de piscina | Sí (los suyos) | Sí (todos) |
 | Editar nombre / cliente / comuna / instalador | Sí (los suyos) | Sí (todos) |
 | Marcar ítems, adjuntar evidencia, reabrir | Sí (los suyos) | No (solo lectura) |
 | Eliminar (archivar) / restaurar proyecto | Sí (los suyos) | Sí (todos) |
 | Ver auditoría y evidencias | Sí (de sus proyectos) | Sí (de todos) |
 
-Esto es una interpretación fiel del documento, no una decisión mía discrecional — salvo un punto: la especificación no dice explícitamente quién puede eliminar un proyecto, así que mantuve el criterio de la versión anterior (el Coordinador puede archivar los suyos). Si prefieres restringirlo solo a Jefatura, es un cambio de una línea en `supabase/schema.sql`.
+Dos puntos donde ya no seguimos la especificación al pie de la letra, por decisión tuya: (1) crear proyectos y
+editar fechas/tipo/línea era exclusivo de Jefatura en la especificación §2 — ahora el Coordinador también puede,
+sobre los suyos, porque es quien los ingresa en terreno; (2) la especificación no dice explícitamente quién puede
+eliminar un proyecto, así que se mantuvo el criterio de que el Coordinador puede archivar los suyos.
 
 ## Qué hace
 
@@ -145,7 +149,7 @@ Esto es una interpretación fiel del documento, no una decisión mía discrecion
 
 En Supabase: Postgres para los datos, Storage privado para las fotos. Accesible desde cualquier equipo o celular con el archivo `index.html` (o mejor, alojando la carpeta `app/` en un hosting estático — Netlify, Vercel, GitHub Pages — para tener una URL fija; te ayudo con eso cuando quieras). El respaldo de la base de datos ahora lo maneja Supabase (revisa el plan de tu proyecto para la política de backups); *Menú ☰ → Exportar copia* sigue disponible para una copia manual en JSON de lo que cada usuario puede ver.
 
-La clave pública (`anon key`) que quedó en `js/config.js` está pensada para ir en el cliente: por sí sola no da acceso a nada, todo lo controla la seguridad a nivel de fila (RLS) de `schema.sql`. Nunca se usó ni se guardó la clave secreta (`service_role`).
+La clave pública (`anon key`) que quedó en `js/config.js` está pensada para ir en el cliente: por sí sola no da acceso a nada, todo lo controla la seguridad a nivel de fila (RLS) de `schema.sql`. La clave secreta (`service_role`) nunca se ha visto, copiado ni guardado en ningún archivo de este proyecto — la única pieza que la usa es la Edge Function `invitar-usuario`, y se la inyecta Supabase automáticamente dentro de esa función, nunca en el cliente.
 
 ## Verificación
 
