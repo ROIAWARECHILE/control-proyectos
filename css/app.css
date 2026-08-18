@@ -74,6 +74,11 @@ h1{font-size:21px;margin:0 0 3px}
 .kpi .d{font-size:12px;color:var(--muted);margin-top:4px}
 
 /* ---------- tabla dashboard ---------- */
+/* envuelve cualquier tabla ancha (cartera de Jefatura, acta) para que en
+   pantallas angostas se pueda desplazar horizontalmente en vez de
+   aplastarse o desbordar la página */
+.tablewrap{overflow-x:auto;-webkit-overflow-scrolling:touch}
+.tablewrap table{min-width:600px}
 table{width:100%;border-collapse:collapse}
 th{text-align:left;font-size:11.5px;text-transform:uppercase;letter-spacing:.5px;color:var(--muted);padding:11px 14px;border-bottom:1px solid var(--line);font-weight:700;white-space:nowrap}
 td{padding:12px 14px;border-bottom:1px solid #f0f3f7;vertical-align:middle;font-size:14px}
@@ -141,6 +146,11 @@ tbody tr:hover{background:#fafbfd;cursor:pointer}
 
 /* ---------- calendario mensual ---------- */
 .calwrap{padding:0;background:transparent;border:0;box-shadow:none}
+/* la cuadrícula de 7 columnas necesita un ancho mínimo para seguir siendo
+   legible; en pantallas angostas se desplaza horizontalmente en vez de
+   aplastar cada día a unos pocos píxeles */
+.calscroll{overflow-x:auto;-webkit-overflow-scrolling:touch;margin:0 -2px}
+.calinner{min-width:640px;padding:0 2px}
 .dow{display:grid;grid-template-columns:repeat(7,1fr);margin:0 0 8px;padding-left:0}
 .dow div{padding:0 0 6px;font-size:10.5px;font-weight:800;text-transform:uppercase;letter-spacing:.8px;color:var(--muted);text-align:center}
 .dow div.wknd{color:#a9b8c6}
@@ -291,7 +301,15 @@ textarea:focus,input:focus,select:focus{outline:0;border-color:var(--brand);box-
   .acta{border:0;box-shadow:none;padding:0;max-width:none}
 }
 
-/* ---------- móvil ---------- */
+/* Los botones de editar/eliminar de una tarjeta de proyecto solo se ven en
+   :hover — en pantallas táctiles (sin hover real) quedarían inalcanzables,
+   así que se muestran siempre que el dispositivo no tenga hover, sin
+   importar el ancho (una tablet grande también puede ser táctil). */
+@media(hover:none){
+  .pact{opacity:1}
+}
+
+/* ---------- tablet / móvil ---------- */
 @media(max-width:760px){
   .kpis{grid-template-columns:repeat(2,1fr)}
   .hideM{display:none}
@@ -302,4 +320,24 @@ textarea:focus,input:focus,select:focus{outline:0;border-color:var(--brand);box-
   .top{padding:0 12px;gap:10px}
   .who{display:none}
   .ucards{grid-template-columns:1fr}
+  .f2{grid-template-columns:1fr}
+  .mact{flex-wrap:wrap}
+  .mact button{flex:1;min-width:120px}
+  .acta{padding:18px}
+  .actabar{flex-wrap:wrap;gap:8px}
+  .dhead{padding:14px}
+}
+
+/* ---------- teléfonos angostos ---------- */
+@media(max-width:430px){
+  .kpis{grid-template-columns:1fr}
+  /* esconde el texto "Control de Proyectos" (deja el ícono) para que quepan
+     el selector Mis proyectos/Dashboard, la campanita y el menú */
+  .top .logo{font-size:0;gap:0}
+  .top .logo span{width:24px;height:24px}
+  .filebtns{flex-direction:column}
+  .ov{padding:10px}
+  .modal{padding:16px}
+  .roleSw button{padding:6px 9px;font-size:12px}
+  .notipanel{right:10px;width:calc(100vw - 20px)}
 }

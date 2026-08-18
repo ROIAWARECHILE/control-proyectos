@@ -321,6 +321,7 @@ function calendario(){
   const enMes = proyectosDelMes();
   const mm = dt => dt.toLocaleDateString("es-CL",{day:"numeric",month:"short"});
   return `<div class="calwrap">
+    <div class="calscroll"><div class="calinner">
     <div class="dow">${DOW.map((x,i) => `<div class="${i>4?'wknd':''}">${x}</div>`).join("")}</div>
     ${wks.map((wk,wi) => {
       const {segs, over} = carriles(wk);
@@ -341,6 +342,7 @@ function calendario(){
             onclick="abrir('${g.p.id}')">${cap?`<u>${cap}</u>`:''}<span class="nm">${g.contL?'‹ ':''}${esc(g.p.nombre)}${g.contR?' ›':''}</span><i>${pctTotal(g.p)}%</i></div>`;}).join("")}
         ${over.length?`<div class="more" onclick="S.vista='sem';render()">+${over.length} proyecto${over.length>1?'s':''} más esta semana — ver por semana</div>`:''}
       </div></div>`;}).join("")}
+    </div></div>
     ${enMes.length?'':'<div class="card empty">No hay proyectos programados en este mes.</div>'}
   </div>
   <div class="leg">
@@ -401,7 +403,7 @@ function vistaJefatura(){
   </div>
   <div class="card">
     <div class="hd">Cartera de ${MESES[S.mes.m]} ${S.mes.y} <span class="n">${lista.length}</span></div>
-    ${lista.length ? `<table><thead><tr>
+    ${lista.length ? `<div class="tablewrap"><table><thead><tr>
       <th>Proyecto</th><th>Tipo</th><th class="hideM">Fechas</th><th>Etapas 1 › 6</th><th>Avance</th><th>Estado</th>
     </tr></thead><tbody>
     ${lista.map(p => { const st = estado(p); return `<tr onclick="abrir('${p.id}')">
@@ -413,7 +415,7 @@ function vistaJefatura(){
       <td style="min-width:110px"><div class="bar"><b style="width:${pctTotal(p)}%"></b></div><div class="pct">${pctTotal(p)}%</div></td>
       <td><span class="dot s-${st.k}"></span>${st.txt}</td>
     </tr>`;}).join("")}
-    </tbody></table>` : `<div class="empty">No hay proyectos programados en este mes.</div>`}
+    </tbody></table></div>` : `<div class="empty">No hay proyectos programados en este mes.</div>`}
   </div>
   <div class="card alerts">
     <div class="hd">Alertas de coordinación <span class="n">${al.length}</span></div>
@@ -658,7 +660,7 @@ function vistaActa(){
     Ejecución ${p.inicio} al ${p.termino} · Coordinador ${esc(p.coord)} · Instalador ${esc(p.inst)}<br>
     Documento generado el ${new Date().toLocaleString("es-CL")}</div>
     ${p.checklist.etapas.map(e => `<h2>${e.n}. ${esc(e.t)}</h2>
-      <table>${e.items.map(i => { const a = p.av[i.id];
+      <div class="tablewrap"><table>${e.items.map(i => { const a = p.av[i.id];
         const ev = a?.evidenciaId ? S.evCache.get(a.evidenciaId) : null;
         return `<tr>
         <td style="width:30px">${a?.ok?"✓":"—"}</td>
@@ -666,7 +668,7 @@ function vistaActa(){
         <td>${esc(i.x)}${a?.nota?`<br><span class="obs">${esc(a.nota)}</span>`:""}</td>
         <td style="width:120px;color:#6b7c8f">${a?new Date(a.ts).toLocaleString("es-CL"):""}</td>
         <td style="width:54px">${ev?`<img src="${ev.url}" onclick="verEvidencia('${a.evidenciaId}')">`:""}</td></tr>`;}).join("")}
-      </table>`).join("")}
+      </table></div>`).join("")}
     <div class="firma">_______________________________<br>Recepción conforme del cliente<br>
     <span style="color:#6b7c8f;font-size:12px">Nombre, firma y fecha</span></div>
   </div>`;
