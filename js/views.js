@@ -26,12 +26,12 @@ const RO = esJefatura;   // checklist de solo lectura para Jefatura
 /* ---------- topbar ---------- */
 /* alertas de etapas (recalculadas, todo proyecto activo visible) + notificaciones no leídas (eventos) */
 function totalNotificaciones(){
-  return alertas(activos()).length + S.notificaciones.filter(n => !n.leida).length;
+  return alertas(activos()).length + S.notificacionesNoLeidas;
 }
 
 function panelNotificaciones(){
   const al = alertas(activos());
-  const sinLeer = S.notificaciones.filter(n => !n.leida).length;
+  const sinLeer = S.notificacionesNoLeidas;
   const vacio = !al.length && !S.notificaciones.length;
   return `
   <div class="menu notipanel ${S.notiAbierta?'on':''}" id="notipanel">
@@ -493,10 +493,14 @@ function filaItem(p,i,ro){
       ${a?.nota?`<div class="note">${esc(a.nota)}</div>`:''}
       ${hist.length?`<button class="histlink" onclick="verHistorial('${i.id}')">Ver historial del ítem (${hist.length})</button>`:''}
     </div>
-    ${ev ? `<img class="thumb" src="${ev.url}" title="Ver evidencia" onclick="verEvidencia('${a.evidenciaId}')">`
-         : ro ? ""
-         : libre ? `<button class="evbtn" onclick="abrirDetalleOpcional('${i.id}')">${a?.ok?'＋ Evidencia/nota':'＋ Adjuntar (opcional)'}</button>`
-         : (a?.ok ? "" : `<button class="evbtn" onclick="toggle('${i.id}')">Adjuntar evidencia</button>`)}
+    ${ev
+      ? `<div style="display:flex;align-items:center;gap:6px">
+          <img class="thumb" src="${ev.url}" title="Ver evidencia" onclick="verEvidencia('${a.evidenciaId}')">
+          ${(libre && !ro) ? `<button class="evbtn" onclick="abrirDetalleOpcional('${i.id}')" title="Reemplazar evidencia u observación">✎</button>` : ""}
+        </div>`
+      : ro ? ""
+      : libre ? `<button class="evbtn" onclick="abrirDetalleOpcional('${i.id}')">${a?.ok?'＋ Evidencia/nota':'＋ Adjuntar (opcional)'}</button>`
+      : (a?.ok ? "" : `<button class="evbtn" onclick="toggle('${i.id}')">Adjuntar evidencia</button>`)}
   </div>`;
 }
 
@@ -504,7 +508,7 @@ function etiquetaAccion(a){
   return ({
     proyecto_creado:"creó el proyecto", proyecto_editado:"editó el proyecto",
     proyecto_archivado:"eliminó el proyecto (archivado)", proyecto_restaurado:"restauró el proyecto",
-    item_cerrado:"cerró un ítem", item_reabierto:"reabrió un ítem",
+    item_cerrado:"cerró un ítem", item_editado:"editó la evidencia/nota de un ítem", item_reabierto:"reabrió un ítem",
     evidencia_cargada:"cargó una evidencia", acta_generada:"generó el acta de recepción",
     ingreso:"ingresó a la plataforma", salida:"cerró sesión", password_cambiado:"cambió su contraseña",
     ingreso_fallido:"intento de ingreso fallido", pin_restablecido:"restableció un PIN",

@@ -48,6 +48,10 @@ function formProyecto(id){
   const jefatura = esJefatura();
   const coordinadores = S.usuarios.filter(u => u.rol === "coordinador");
   const coordActual = p ? p.coordinadorId : (jefatura ? (coordinadores[0]?.id || "") : S.sesion.userId);
+  // Si el coordinador actual del proyecto ya no está en la lista (ej. lo ascendieron a Jefatura), el <select>
+  // no tendría ninguna opción coincidente y el navegador seleccionaría la primera en su lugar — reasignando el
+  // proyecto sin querer con solo abrir "Editar" y guardar. Se agrega su opción aparte para que nunca pase.
+  const coordActualFueraDeLista = p && p.coordinadorId && !coordinadores.some(u => u.id === p.coordinadorId);
 
   abrirModal(`
     <h3>${p ? `Editar proyecto ${p.id}` : "Crear proyecto"}</h3>
@@ -70,7 +74,9 @@ function formProyecto(id){
       <div style="grid-column:1/-1"><span class="lab">Coordinador a cargo</span>
         ${jefatura
           ? (coordinadores.length
-              ? `<select id="fCoord">${coordinadores.map(u => `<option value="${u.id}"${u.id===coordActual?" selected":""}>${esc(u.nombre)}</option>`).join("")}</select>`
+              ? `<select id="fCoord">${coordinadores.map(u => `<option value="${u.id}"${u.id===coordActual?" selected":""}>${esc(u.nombre)}</option>`).join("")}${
+                  coordActualFueraDeLista ? `<option value="${p.coordinadorId}" selected>${esc(p.coord)} (ya no es Coordinador)</option>` : ""
+                }</select>`
               : `<input type="text" value="Aún no hay coordinadores registrados" disabled>`)
           : `<input type="text" value="${esc(p?.coord || S.sesion.nombre)}" disabled title="Solo Jefatura puede reasignar el coordinador de un proyecto">`}
       </div>
@@ -87,6 +93,9 @@ function formProyecto(id){
           : `<input type="text" value="Aún no hay instaladores registrados (Menú → Instaladores)" disabled title="El proyecto queda sin instalador asignado hasta que agregues uno a la lista">`}
       </div>
     </div>
+    ${jefatura && !coordinadores.length ? `<div class="warnbox" style="margin:14px 0 0;background:#fff4dd;color:#8a5600">
+      Todavía no hay ninguna cuenta Coordinador registrada. El proyecto se va a crear <b>sin asignar</b> —
+      ningún Coordinador lo va a ver hasta que vuelvas a editarlo y elijas uno (Menú → Usuarios para invitar).</div>` : ''}
     ${p && cerrados ? `<div class="warnbox" style="margin:14px 0 0">Este proyecto tiene ${cerrados} ítem(s) cerrados.
       Si cambias el tipo de proyecto, el checklist se ajusta: los ítems que dejen de aplicar salen del cálculo de
       avance y quedan archivados en el historial con su evidencia (RN-12).</div>` : ''}
@@ -122,7 +131,7 @@ async function guardarProyecto(id){
 
       if(tipo !== p.tipo){
         cambios.push(`tipo ${p.tipo} → ${tipo}`);
-        actualizado = await cambiarTipoProyectoDB(p, tipo);
+        actualizado = await cambiarTipoProyectoDB(p, tipo, linea);
       }
       const camposComunes = {
         nombre:nom, cliente:g("fCli")||"Por definir", comuna:g("fCom")||"—", instalador:g("fInst")||"Por asignar",
@@ -230,8 +239,7 @@ function toggle(itemId){
   }
 
   TMP = {itemId, blob:null};
-  const etapa = p.checklist.etapas.find(e => e.items.some(i => i.id === itemId));
-  const prev = p.checklist.etapas.filter(x => x.n < etapa.n).some(x => pctEtapa(p,x) < 100);
+  const prev = tieneEtapasPreviasIncompletas(p, itemId);
   TMP.conPrevias = prev;
   abrirModal(`
     <h3>Ítem ${esc(itemId)}</h3><p class="q">${esc(it.x)}</p>
@@ -311,7 +319,8 @@ async function archivarVigente(p, itemId, motivo){
    registro anterior primero — mismo criterio que reabrirItem(). Usada tanto
    por el popup de ítems obligatorios como por el flujo libre de opcionales. */
 async function cerrarItemConDetalle(p, itemId, {nota, blob, conPrevias}){
-  if(p.av[itemId]?.ok) await archivarVigente(p, itemId, "Actualizado con nueva evidencia/observación");
+  const yaEstabaCerrado = !!p.av[itemId]?.ok;   // se guarda antes de archivar: archivarVigente() borra p.av[itemId]
+  if(yaEstabaCerrado) await archivarVigente(p, itemId, "Actualizado con nueva evidencia/observación");
 
   const geo = await obtenerGeo();
   const ahora = new Date().toISOString();
@@ -325,9 +334,12 @@ async function cerrarItemConDetalle(p, itemId, {nota, blob, conPrevias}){
 
   await registrarAvanceDB(p.id, itemId, {nota, evidenciaId, geo, conPrevias: !!conPrevias});
   p.av[itemId] = {ok:true, ts:ahora, user:S.sesion.nombre, nota, evidenciaId, geo};
-  await audit("item_cerrado", `Ítem ${itemId}${conPrevias ? " · con etapas anteriores incompletas (RN-4)" : ""}${nota ? " · con observación" : ""}`, p.id);
+  await audit(yaEstabaCerrado ? "item_editado" : "item_cerrado",
+    `Ítem ${itemId}${conPrevias ? " · con etapas anteriores incompletas (RN-4)" : ""}${nota ? " · con observación" : ""}`, p.id);
   await cargarAuditoria(p.id);
-  await notificarItemCerrado(p.id, `${S.sesion.nombre} cerró el ítem ${itemId} en ${p.nombre}`);
+  // Solo avisa a Jefatura en un cierre genuino — editar la nota/evidencia de
+  // un ítem que ya estaba cerrado no es un evento nuevo que le interese.
+  if(!yaEstabaCerrado) await notificarItemCerrado(p.id, `${S.sesion.nombre} cerró el ítem ${itemId} en ${p.nombre}`);
 }
 
 async function confirmarItem(){
@@ -361,28 +373,36 @@ async function reabrirItem(itemId){
 /* clic directo en el checkbox: cierra/reabre al instante, sin evidencia ni
    observación. Los ítems obligatorios nunca llegan aquí (ver filaItem en
    views.js) — siguen pasando por toggle() y su popup de siempre. */
+const ITEMS_EN_VUELO = new Set();   // evita que un doble-tap en el checkbox dispare dos operaciones superpuestas
+
 async function toggleLibre(itemId){
   if(RO()) return;
   const p = S.proyectos.find(x => x.id === S.abierto);
   const it = itemsDe(p).find(i => i.id === itemId);
   if(!it || it.ev === "obligatoria") return;
+  if(ITEMS_EN_VUELO.has(itemId)) return;   // ya hay una operación en curso para este ítem
+  ITEMS_EN_VUELO.add(itemId);
 
-  if(p.av[itemId]?.ok){
+  try{
+    if(p.av[itemId]?.ok){
+      try{
+        await archivarVigente(p, itemId, "Ítem reabierto por el coordinador");
+        await audit("item_reabierto", `Ítem ${itemId} · el registro anterior quedó en el historial`, p.id);
+        await cargarAuditoria(p.id);
+        render();
+      }catch(e){ console.error(e); toast(mensajeError(e)); }
+      return;
+    }
+
+    const conPrevias = tieneEtapasPreviasIncompletas(p, itemId);
     try{
-      await archivarVigente(p, itemId, "Ítem reabierto por el coordinador");
-      await audit("item_reabierto", `Ítem ${itemId} · el registro anterior quedó en el historial`, p.id);
-      await cargarAuditoria(p.id);
+      await cerrarItemConDetalle(p, itemId, {nota:"", blob:null, conPrevias});
+      if(conPrevias) toast(`Ítem ${itemId} registrado — hay etapas anteriores incompletas (RN-4)`);
       render();
     }catch(e){ console.error(e); toast(mensajeError(e)); }
-    return;
+  }finally{
+    ITEMS_EN_VUELO.delete(itemId);
   }
-
-  const etapa = p.checklist.etapas.find(e => e.items.some(i => i.id === itemId));
-  const conPrevias = p.checklist.etapas.filter(x => x.n < etapa.n).some(x => pctEtapa(p,x) < 100);
-  try{
-    await cerrarItemConDetalle(p, itemId, {nota:"", blob:null, conPrevias});
-    render();
-  }catch(e){ console.error(e); toast(mensajeError(e)); }
 }
 
 /* botón "＋ evidencia/nota": mismo popup de siempre pero sin exigir nada
@@ -396,10 +416,13 @@ function abrirDetalleOpcional(itemId){
 
   TMP = {itemId, blob:null};
   const actual = p.av[itemId];
+  const prev = !actual?.ok && tieneEtapasPreviasIncompletas(p, itemId);   // solo aplica al cerrar por primera vez
+  TMP.conPrevias = prev;
   abrirModal(`
     <h3>Ítem ${esc(itemId)}</h3><p class="q">${esc(it.x)}</p>
     ${actual?.ok ? `<div class="warnbox">Este ítem ya está marcado como cumplido. Guardar aquí reemplaza su
       evidencia y observación; el registro anterior queda archivado en el historial del ítem (RN-3).</div>` : ''}
+    ${prev ? `<div class="warnbox">Hay etapas anteriores incompletas. Puedes continuar, pero quedará constancia en la auditoría (RN-4).</div>` : ''}
     <span class="lab">Evidencia (opcional)</span>
     <div class="filebtns">
       <button onclick="document.getElementById('fileCam').click()">📷 Tomar foto</button>
@@ -418,7 +441,7 @@ async function confirmarDetalleOpcional(){
   const p = S.proyectos.find(x => x.id === S.abierto);
   const nota = document.getElementById("nota").value.trim();
   try{
-    await cerrarItemConDetalle(p, TMP.itemId, {nota, blob: TMP.blob});
+    await cerrarItemConDetalle(p, TMP.itemId, {nota, blob: TMP.blob, conPrevias: TMP.conPrevias});
     TMP = {};
     cerrarModal(); toast("Guardado"); render();
   }catch(e){
@@ -473,7 +496,7 @@ async function abrirNotificacion(id, proyectoId){
   try{
     await marcarNotificacionLeidaDB(id);
     const n = S.notificaciones.find(x => x.id === id);
-    if(n) n.leida = true;
+    if(n && !n.leida){ n.leida = true; S.notificacionesNoLeidas = Math.max(0, S.notificacionesNoLeidas - 1); }
   }catch(e){ console.error(e); }
   if(proyectoId) abrir(proyectoId); else render();
 }
@@ -481,6 +504,7 @@ async function marcarTodasNotificacionesLeidas(){
   try{
     await marcarTodasNotificacionesLeidasDB();
     S.notificaciones.forEach(n => n.leida = true);
+    S.notificacionesNoLeidas = 0;
     render();
   }catch(e){ console.error(e); toast(mensajeError(e)); }
 }

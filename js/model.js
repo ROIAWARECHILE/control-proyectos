@@ -40,7 +40,8 @@ const S = {
   mes: null,             // {y, m}
   evCache: new Map(),    // evidenciaId -> {url, meta} del proyecto abierto
   auditProy: [],         // auditoría del proyecto abierto
-  notificaciones: [],    // notificaciones propias (tabla notificaciones), solo eventos ("ítem cerrado")
+  notificaciones: [],    // notificaciones propias (tabla notificaciones), solo eventos ("ítem cerrado") — las 30 más recientes
+  notificacionesNoLeidas: 0,   // total real de no leídas (puede haber más que las 30 cargadas en "notificaciones")
   notiAbierta: false,    // panel de la campanita
 };
 
@@ -85,6 +86,16 @@ const pctEtapa = (p,e) => { const l = e.items; if(!l.length) return 100;
   return Math.round(l.filter(i => p.av[i.id]?.ok).length / l.length * 100); };
 const pctTotal = p => { const l = itemsDe(p); if(!l.length) return 0;
   return Math.round(l.filter(i => p.av[i.id]?.ok).length / l.length * 100); };
+
+/* RN-4: ¿hay alguna etapa anterior a la del ítem con avance incompleto?
+   Única fuente de este cálculo — toggle(), toggleLibre() y
+   abrirDetalleOpcional() (actions.js) lo usan los tres, para que la
+   advertencia y la constancia en auditoría nunca se desincronicen. */
+function tieneEtapasPreviasIncompletas(p, itemId){
+  const etapa = p.checklist.etapas.find(e => e.items.some(i => i.id === itemId));
+  if(!etapa) return false;
+  return p.checklist.etapas.filter(x => x.n < etapa.n).some(x => pctEtapa(p,x) < 100);
+}
 
 /* RN-5: fecha límite por etapa */
 function limite(p,n){

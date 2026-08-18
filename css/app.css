@@ -218,8 +218,8 @@ tbody tr:hover{background:#fafbfd;cursor:pointer}
 .itxt{flex:1;font-size:13.8px}
 .inum{display:inline-block;min-width:30px;font-weight:800;color:var(--brand);font-size:13px;font-variant-numeric:tabular-nums;margin-right:2px}
 .item.done .inum{color:var(--ok)}
-.itxt .req{font-size:11px;font-weight:700;color:#b26b00;background:#fff4dd;padding:2px 7px;border-radius:20px;margin-left:7px;white-space:nowrap}
-.itxt .only{font-size:11px;font-weight:700;color:#42588e;background:#eaf0fb;padding:2px 7px;border-radius:20px;margin-left:7px}
+.req{font-size:11px;font-weight:700;color:#b26b00;background:#fff4dd;padding:2px 7px;border-radius:20px;margin-left:7px;white-space:nowrap}
+.only{font-size:11px;font-weight:700;color:#42588e;background:#eaf0fb;padding:2px 7px;border-radius:20px;margin-left:7px}
 .stamp{font-size:11.5px;color:var(--muted);margin-top:5px}
 .note{font-size:12.5px;color:#3d5064;background:#f4f7fa;border-left:3px solid #d3dde6;padding:6px 10px;border-radius:0 6px 6px 0;margin-top:7px}
 .thumb{width:52px;height:52px;border-radius:8px;object-fit:cover;border:1px solid var(--line);flex:none;background:#eef2f7;cursor:zoom-in}

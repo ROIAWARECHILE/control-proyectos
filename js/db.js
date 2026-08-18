@@ -160,15 +160,23 @@ async function actualizarProyectoDB(id, campos){
   return mapProyectoRow(data);
 }
 
-/* RN-12: cambia el tipo, recalcula el checklist y archiva lo que deja de aplicar. Solo Jefatura (RLS). */
-async function cambiarTipoProyectoDB(p, nuevoTipo){
+/* RN-12: cambia el tipo, recalcula el checklist y archiva lo que deja de aplicar.
+   Jefatura en cualquier proyecto, o Coordinador en los suyos (RLS). */
+/* nuevaLinea va en la MISMA actualización que tipo (no en una llamada aparte):
+   la base exige que "tipo='Piscina'" y "linea_piscina no nula" cambien juntos
+   (constraint linea_piscina_coherente) — separarlas dejaría el proyecto, por
+   un instante, con un tipo nuevo y la línea vieja (o viceversa) y la
+   actualización fallaría. */
+async function cambiarTipoProyectoDB(p, nuevoTipo, nuevaLinea){
   const nuevoChecklist = snapshotChecklist(nuevoTipo);
   const validos = new Set(nuevoChecklist.etapas.flatMap(e => e.items).map(i => i.id));
   const invalidos = Object.keys(p.av).filter(id => !validos.has(id));
   for(const itemId of invalidos){
     await reabrirAvanceDB(p.id, itemId, `Dejó de aplicar por cambio de tipo (${p.tipo} → ${nuevoTipo})`);
   }
-  const { data, error } = await sb.from("proyectos").update({tipo: nuevoTipo, checklist: nuevoChecklist}).eq("id", p.id).select().single();
+  const { data, error } = await sb.from("proyectos")
+    .update({tipo: nuevoTipo, checklist: nuevoChecklist, linea_piscina: nuevoTipo === "Piscina" ? nuevaLinea : null})
+    .eq("id", p.id).select().single();
   if(error) throw error;
   return mapProyectoRow(data);
 }
@@ -283,6 +291,12 @@ async function cargarNotificaciones(){
   const { data, error } = await sb.from("notificaciones").select("*").order("created_at", {ascending:false}).limit(30);
   if(error) throw error;
   S.notificaciones = data || [];
+  // El panel solo lista las 30 más recientes, pero el contador de la
+  // campanita necesita el total real de no leídas (podría haber más de 30
+  // sin leer si nadie entró a la app por un tiempo) — se pide aparte con
+  // un count() liviano, sin traer filas.
+  const { count, error: e2 } = await sb.from("notificaciones").select("*", {count: "exact", head: true}).eq("leida", false);
+  S.notificacionesNoLeidas = e2 ? S.notificaciones.filter(n => !n.leida).length : (count ?? 0);
 }
 
 /* nunca bloquea el registro del ítem si falla (mismo criterio que audit()) */

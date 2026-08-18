@@ -42,6 +42,14 @@ declare
   rol_solicitado text := case when new.raw_user_meta_data->>'rol' = 'jefatura' then 'jefatura' else 'coordinador' end;
   rol_final text;
 begin
+  if rol_solicitado = 'jefatura' then
+    -- Bloqueo de sesión (no depende de que ya existan filas, a diferencia de
+    -- "for update"): sin esto, dos signUp simultáneos pidiendo 'jefatura'
+    -- durante la ventana de arranque (cero Jefaturas todavía) podrían leer
+    -- ambos "no existe ninguna" antes de que el otro confirme su inserción,
+    -- y los dos terminar como Jefatura.
+    perform pg_advisory_xact_lock(hashtext('handle_new_user:jefatura_bootstrap'));
+  end if;
   if rol_solicitado = 'jefatura' and exists(select 1 from public.profiles where rol = 'jefatura') then
     rol_final := 'coordinador';
   else
@@ -101,6 +109,13 @@ begin
   if nuevo_rol not in ('coordinador','jefatura') then
     raise exception 'Rol inválido: %', nuevo_rol;
   end if;
+  -- Bloquea las filas de Jefatura antes de contarlas: sin esto, dos llamadas
+  -- simultáneas degradando cuentas Jefatura distintas podrían leer ambas el
+  -- mismo conteo "2" antes de que la otra confirme, y las dos pasar el check
+  -- de abajo — dejando el sistema en cero Jefaturas pese a la protección.
+  if nuevo_rol <> 'jefatura' then
+    perform 1 from public.profiles where rol = 'jefatura' for update;
+  end if;
   if nuevo_rol <> 'jefatura'
      and exists(select 1 from public.profiles where id = usuario_id and rol = 'jefatura')
      and (select count(*) from public.profiles where rol = 'jefatura') <= 1 then
@@ -155,6 +170,17 @@ begin
   ) then
     alter table public.proyectos
       add constraint linea_piscina_valores check (linea_piscina is null or linea_piscina in ('SWIM','SMARTPOOLS'));
+  end if;
+  -- Antes esto solo se exigía en el formulario (js/actions.js): una llamada
+  -- directa a la API podía dejar una Piscina sin línea, o un Tiny House con
+  -- una línea vieja pegada. Antes de agregarla se confirmó que ningún
+  -- proyecto ya creado la viola.
+  if not exists (
+    select 1 from information_schema.table_constraints
+    where constraint_name = 'linea_piscina_coherente' and table_name = 'proyectos'
+  ) then
+    alter table public.proyectos
+      add constraint linea_piscina_coherente check ((tipo = 'Piscina') = (linea_piscina is not null));
   end if;
 end $$;
 
