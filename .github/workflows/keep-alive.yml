@@ -1,0 +1,20 @@
+name: Mantener activa la base de datos
+
+# El plan gratuito de Supabase pausa el proyecto tras ~7 días sin actividad.
+# Esta consulta liviana (solo lectura, sin credenciales privadas) lo mantiene
+# activo aunque nadie use la app por un tiempo.
+on:
+  schedule:
+    - cron: '0 12 * * 1,4' # lunes y jueves 12:00 UTC
+  workflow_dispatch: {}
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Consulta liviana a Supabase (REST)
+        # La misma anon key pública que usa la app en js/config.js (protegida por RLS).
+        run: |
+          curl -sf \
+            -H "apikey: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImRqZ3JxdW5rYnJwcGNxaGZlbHlpIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTYxMjg1NzgsImV4cCI6MjA3MTcwNDU3OH0.J3PyFqZ8-kAonplvQuapg8vg0IIQwiKVd7yEuVVqrfw" \
+            "https://djgrqunkbrppcqhfelyi.supabase.co/rest/v1/profiles?select=id&limit=1"
