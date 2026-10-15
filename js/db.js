@@ -136,6 +136,7 @@ function mapProyectoRow(row){
     coordinadorId: row.coordinador_id, coord: coordPerfil ? coordPerfil.nombre : "Sin asignar",
     inst: row.instalador, inicio: row.fecha_inicio, termino: row.fecha_termino,
     checklist: row.checklist, archivado: row.archivado, archivadoTs: row.archivado_ts,
+    completadoTs: row.completado_ts, completadoPor: row.completado_por,
     creadoPor: row.creado_por, av: {}, avArchivado: []
   };
 }
@@ -184,6 +185,16 @@ async function cambiarTipoProyectoDB(p, nuevoTipo, nuevaLinea){
 async function archivarProyectoDB(id, archivado){
   const { data, error } = await sb.from("proyectos")
     .update({archivado, archivado_ts: archivado ? new Date().toISOString() : null})
+    .eq("id", id).select().single();
+  if(error) throw error;
+  return mapProyectoRow(data);
+}
+
+/* RN-8: se llama al generar el acta con el checklist al 100%. Al reabrir un
+   ítem, un trigger de la base (avance_reabierto_descompleta) lo deshace. */
+async function marcarCompletadoDB(id){
+  const { data, error } = await sb.from("proyectos")
+    .update({completado_ts: new Date().toISOString(), completado_por: S.sesion.userId})
     .eq("id", id).select().single();
   if(error) throw error;
   return mapProyectoRow(data);

@@ -13,8 +13,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Consulta liviana a Supabase (REST)
-        # La misma anon key pública que usa la app en js/config.js (protegida por RLS).
+        # La misma clave publicable que usa la app en js/config.js (protegida por RLS).
+        # existen_cuentas() es la única consulta abierta sin sesión (solo devuelve true/false).
         run: |
           curl -sf \
-            -H "apikey: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImRqZ3JxdW5rYnJwcGNxaGZlbHlpIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTYxMjg1NzgsImV4cCI6MjA3MTcwNDU3OH0.J3PyFqZ8-kAonplvQuapg8vg0IIQwiKVd7yEuVVqrfw" \
-            "https://djgrqunkbrppcqhfelyi.supabase.co/rest/v1/profiles?select=id&limit=1"
+            -H "apikey: sb_publishable_tAabqx6C574v8-1ZD2_Jmw_Y6WUB7DP" \
+            -X POST -H "Content-Type: application/json" -d "{}" \
+            "https://isbpfyeoilznnnywcxhx.supabase.co/rest/v1/rpc/existen_cuentas"

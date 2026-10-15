@@ -184,6 +184,12 @@ begin
   end if;
 end $$;
 
+-- Proyecto completado (RN-8): se marca al generar el acta de recepción con
+-- el checklist al 100%. Antes "Cerrado" solo se calculaba en pantalla y no
+-- quedaba guardado en ninguna parte. completado_ts null = no completado.
+alter table public.proyectos add column if not exists completado_ts timestamptz;
+alter table public.proyectos add column if not exists completado_por uuid references public.profiles(id);
+
 -- Decisión de negocio (ya no la de la especificación original §2): el
 -- Coordinador SÍ puede crear proyectos y editar fechas/tipo/línea de los
 -- suyos — es quien los ingresa en terreno. Lo único que sigue siendo
@@ -280,6 +286,22 @@ drop trigger if exists trg_avance_solo_archivar on public.item_avance;
 create trigger trg_avance_solo_archivar
   before update on public.item_avance
   for each row execute function public.avance_solo_archivar();
+
+-- Reabrir un ítem de un proyecto completado le quita la marca de completado:
+-- el acta ya no refleja el checklist y hay que volver a generarla.
+create or replace function public.avance_reabierto_descompleta()
+returns trigger language plpgsql as $$
+begin
+  update public.proyectos set completado_ts = null, completado_por = null
+   where id = new.proyecto_id and completado_ts is not null;
+  return new;
+end;
+$$;
+drop trigger if exists trg_avance_reabierto_descompleta on public.item_avance;
+create trigger trg_avance_reabierto_descompleta
+  after update of vigente on public.item_avance
+  for each row when (old.vigente and not new.vigente)
+  execute function public.avance_reabierto_descompleta();
 
 alter table public.item_avance enable row level security;
 drop policy if exists "avance: ver segun proyecto" on public.item_avance;
@@ -584,3 +606,22 @@ create policy "instaladores: jefatura edita"
 -- Fin. Revisa Database -> Advisors en el dashboard para confirmar que
 -- todas las tablas quedaron con RLS activo.
 -- ---------------------------------------------------------------------
+
+-- ---------------------------------------------------------------------
+-- 10. PERMISOS DE FUNCIONES (endurecimiento, advisors de Supabase)
+--    Postgres da EXECUTE a PUBLIC por defecto. Las funciones que no usa la
+--    pantalla de ingreso (sin sesión) quedan solo para usuarios autenticados;
+--    handle_new_user() solo la usa el trigger, nadie la llama directo.
+--    existen_cuentas()/existe_jefatura() siguen abiertas a anon a propósito.
+-- ---------------------------------------------------------------------
+revoke execute on function public.handle_new_user() from public, anon, authenticated;
+revoke execute on function public.mi_rol() from public, anon;
+grant execute on function public.mi_rol() to authenticated;
+revoke execute on function public.asignar_rol(uuid, text) from public, anon;
+grant execute on function public.asignar_rol(uuid, text) to authenticated;
+revoke execute on function public.notificar_item_cerrado(text, text) from public, anon;
+grant execute on function public.notificar_item_cerrado(text, text) to authenticated;
+
+alter function public.proyecto_restringir_edicion() set search_path = public;
+alter function public.avance_solo_archivar() set search_path = public;
+alter function public.avance_reabierto_descompleta() set search_path = public;

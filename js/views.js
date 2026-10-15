@@ -512,6 +512,7 @@ function etiquetaAccion(a){
     proyecto_archivado:"eliminó el proyecto (archivado)", proyecto_restaurado:"restauró el proyecto",
     item_cerrado:"cerró un ítem", item_editado:"editó la evidencia/nota de un ítem", item_reabierto:"reabrió un ítem",
     evidencia_cargada:"cargó una evidencia", acta_generada:"generó el acta de recepción",
+    proyecto_completado:"marcó el proyecto como completado",
     ingreso:"ingresó a la plataforma", salida:"cerró sesión", password_cambiado:"cambió su contraseña",
     ingreso_fallido:"intento de ingreso fallido", pin_restablecido:"restableció un PIN",
     configuracion_inicial:"configuración inicial", respaldo_exportado:"exportó un respaldo",
@@ -658,6 +659,7 @@ function vistaActa(){
     <h1>Acta de recepción conforme — ${esc(p.nombre)}</h1>
     <div class="am">${p.id} · ${esc(p.cliente)} · ${esc(p.comuna)} · ${esc(p.tipo)}<br>
     Ejecución ${p.inicio} al ${p.termino} · Coordinador ${esc(p.coord)} · Instalador ${esc(p.inst)}<br>
+    ${p.completadoTs ? `Proyecto completado el ${new Date(p.completadoTs).toLocaleString("es-CL")}${(n => n ? ` por ${esc(n)}` : "")(S.usuarios.find(u => u.id === p.completadoPor)?.nombre)}<br>` : ""}
     Documento generado el ${new Date().toLocaleString("es-CL")}</div>
     ${p.checklist.etapas.map(e => `<h2>${e.n}. ${esc(e.t)}</h2>
       <div class="tablewrap"><table>${e.items.map(i => { const a = p.av[i.id];

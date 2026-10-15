@@ -107,7 +107,7 @@ function limite(p,n){
 function estado(p){
   const t = pctTotal(p), H = hoy();
   const atras = p.checklist.etapas.some(e => limite(p,e.n) < H && pctEtapa(p,e) < 100);
-  if(t === 100) return {k:"ok",  txt:"Cerrado"};
+  if(t === 100) return {k:"ok",  txt: p.completadoTs ? "Completado" : "Listo para acta"};
   if(atras)     return {k:"bad", txt:"Atrasado"};
   if(d(p.inicio) > H && t === 0) return {k:"idle", txt:"Por iniciar"};
   return {k:"warn", txt:"En curso"};

@@ -2,3 +2,7 @@
 .env.*
 *.local
 supabase/.temp/
+
+# migración: datos exportados y dependencias, solo en este PC
+migracion/datos/
+migracion/node_modules/

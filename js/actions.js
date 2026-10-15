@@ -312,6 +312,7 @@ async function archivarVigente(p, itemId, motivo){
   p.avArchivado = p.avArchivado || [];
   p.avArchivado.push({itemId, ...a, archivadoTs:new Date().toISOString(), motivo});
   delete p.av[itemId];
+  p.completadoTs = null; p.completadoPor = null;   // la base hace lo mismo (trigger avance_reabierto_descompleta)
 }
 
 /* cierra un ítem con nota/evidencia (ambas opcionales salvo que el llamador
@@ -455,6 +456,15 @@ async function confirmarDetalleOpcional(){
 async function verActa(){
   const p = S.proyectos.find(x => x.id === S.abierto);
   if(pctTotal(p) !== 100) return;
+  if(!p.completadoTs){
+    try{
+      fusionarProyecto(p, await marcarCompletadoDB(p.id));
+      await audit("proyecto_completado", "Acta de recepción generada con el checklist al 100%", p.id);
+    }catch(e){
+      // el acta se muestra igual; solo avisa que no quedó guardado como completado
+      console.error(e); toast(`El proyecto no quedó guardado como completado: ${mensajeError(e)}`);
+    }
+  }
   await audit("acta_generada", "", p.id);
   S.pantalla = "acta";
   render();
