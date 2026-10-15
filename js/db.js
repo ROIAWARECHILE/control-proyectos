@@ -227,10 +227,18 @@ async function cargarChecklist(proyectoId){
 async function cargarTodoElAvance(){
   if(!S.proyectos.length) return;
   const ids = S.proyectos.map(p => p.id);
-  const { data, error } = await sb.from("item_avance").select("*").in("proyecto_id", ids).order("ts", {ascending:true});
-  if(error) throw error;
+  // Supabase devuelve como máximo 1000 filas por consulta: sin paginar, los
+  // registros más recientes quedaban fuera y las listas mostraban menos avance.
+  const data = [];
+  for(let desde = 0; ; desde += 1000){
+    const { data: pagina, error } = await sb.from("item_avance").select("*").in("proyecto_id", ids)
+      .order("ts", {ascending:true}).order("id").range(desde, desde + 999);
+    if(error) throw error;
+    data.push(...pagina);
+    if(pagina.length < 1000) break;
+  }
   const porProyecto = new Map();
-  (data || []).forEach(row => {
+  data.forEach(row => {
     if(!porProyecto.has(row.proyecto_id)) porProyecto.set(row.proyecto_id, []);
     porProyecto.get(row.proyecto_id).push(row);
   });
@@ -267,7 +275,7 @@ async function hashBlob(blob){
 
 async function subirEvidenciaDB(proyectoId, itemId, blob){
   const hash = await hashBlob(blob);
-  const path = `${proyectoId}/${itemId}/${uid("")}.jpg`;
+  const path = `${proyectoId}/${itemId}/${uid("")}.${blob.type === "image/webp" ? "webp" : "jpg"}`;
   const { error: upErr } = await sb.storage.from("evidencias").upload(path, blob, {contentType: blob.type || "image/jpeg", upsert:false});
   if(upErr) throw upErr;
   const { data, error } = await sb.from("evidencias").insert({

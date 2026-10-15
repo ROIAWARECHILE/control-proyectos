@@ -113,7 +113,7 @@ function vistaSetup(){
   <div class="auth"><div class="card" style="padding:26px">
     <div class="authlogo">◈</div>
     <h2 style="text-align:center">Configuración inicial</h2>
-    <p class="sub" style="text-align:center">Crea las dos cuentas de la plataforma: quedan guardadas en el servidor, accesibles desde cualquier equipo.</p>
+    <p class="sub" style="text-align:center">Crea la primera cuenta de Coordinador y la primera de Jefatura. Después, Jefatura puede invitar a más usuarios desde Menú → Usuarios.</p>
     <div class="fgrp"><span class="lab">Nombre del Coordinador de Proyectos</span>
       <input type="text" id="suNomC" placeholder="Ej: Juan Pérez"></div>
     <div class="fgrp"><span class="lab">Correo del Coordinador</span>
@@ -257,6 +257,16 @@ function barraMes(extra){
 function mover(n){ const x = new Date(S.mes.y, S.mes.m + n, 1); S.mes = {y:x.getFullYear(), m:x.getMonth()}; render(); }
 function hoyMes(){ const H = hoy(); S.mes = {y:H.getFullYear(), m:H.getMonth()}; render(); }
 
+/* ---------- selector En trabajo / Completados (coordinador y dashboard) ---------- */
+function filtroTrabajo(){
+  const nT = enTrabajo().length, nC = completados().length;
+  return `<div class="vsw filtro">
+    <button class="${S.filtro==='trabajo'?'on':''}" onclick="cambiarFiltro('trabajo')">En trabajo <span class="n">${nT}</span></button>
+    <button class="${S.filtro==='completados'?'on':''}" onclick="cambiarFiltro('completados')">Completados <span class="n">${nC}</span></button>
+  </div>`;
+}
+function cambiarFiltro(f){ S.filtro = f; render(); window.scrollTo(0,0); }
+
 /* ---------- COORDINADOR: programación ---------- */
 function vistaCoordinador(){
   if(!activos().length){
@@ -271,6 +281,18 @@ function vistaCoordinador(){
     </div>`;
     return;
   }
+  if(S.filtro === "completados"){
+    const lista = completados();
+    app.innerHTML = `
+    <div class="ph"><div>
+      <h1>Mis proyectos</h1>
+      <p class="sub" style="margin:0">Proyectos con el checklist al 100% y el acta de recepción generada.</p>
+    </div><button class="btn p" onclick="nuevoProyecto()">+ Crear proyecto</button></div>
+    <div class="calbar">${filtroTrabajo()}</div>
+    ${lista.length ? `<div class="pgrid">${lista.map(p => fichaProyecto(p)).join("")}</div>`
+      : `<div class="card empty">Aún no hay proyectos completados. Un proyecto queda completado al generar su acta de recepción con el checklist al 100%.</div>`}`;
+    return;
+  }
   const lista = proyectosDelMes();
   const c = k => lista.filter(p => estado(p).k === k).length;
   const resumen = lista.length
@@ -278,13 +300,14 @@ function vistaCoordinador(){
        ${c("bad") ?`<span class="pill b"><span class="dot s-bad"></span>${c("bad")} atrasado${c("bad")>1?'s':''}</span>`:''}
        ${c("warn")?`<span class="pill"><span class="dot s-warn"></span>${c("warn")} en curso</span>`:''}
        ${c("idle")?`<span class="pill"><span class="dot s-idle"></span>${c("idle")} por iniciar</span>`:''}
-       ${c("ok")  ?`<span class="pill"><span class="dot s-ok"></span>${c("ok")} cerrado${c("ok")>1?'s':''}</span>`:''}`
+       ${c("ready")?`<span class="pill r"><span class="dot s-ready"></span>${c("ready")} listo${c("ready")>1?'s':''} para acta</span>`:''}`
     : `<span class="cnt vacio">Sin proyectos en ${MESES[S.mes.m]} ${S.mes.y}</span>`;
   app.innerHTML = `
   <div class="ph"><div>
     <h1>Mis proyectos</h1>
     <p class="sub" style="margin:0">Programación mensual del coordinador · hasta ${MAXLANE} proyectos simultáneos por día.</p>
   </div><button class="btn p" onclick="nuevoProyecto()">+ Crear proyecto</button></div>
+  <div class="calbar">${filtroTrabajo()}</div>
   ${barraMes(`
     <div class="resumen">${resumen}</div>
     <div style="flex:1"></div>
@@ -301,7 +324,7 @@ function semanal(){
   const mm = dt => dt.toLocaleDateString("es-CL",{day:"numeric",month:"short"});
   return wks.map((wk,wi) => {
     const a = ymd(wk[0]), b = ymd(wk[6]);
-    const lista = activos().filter(p => p.inicio <= b && p.termino >= a)
+    const lista = visibles().filter(p => p.inicio <= b && p.termino >= a)
                            .sort((x,y) => x.inicio.localeCompare(y.inicio));
     const esActual = wk.some(dd => ymd(dd) === hy);
     return `<div class="semblk ${esActual?'act':''}">
@@ -348,7 +371,8 @@ function calendario(){
   <div class="leg">
     <span><b style="background:${COLOR.warn}"></b>En curso</span>
     <span><b style="background:${COLOR.bad}"></b>Atrasado</span>
-    <span><b style="background:${COLOR.ok}"></b>Cerrado</span>
+    <span><b style="background:${COLOR.ready}"></b>Listo para acta</span>
+    <span><b style="background:${COLOR.ok}"></b>Completado</span>
     <span><b style="background:${COLOR.idle}"></b>Por iniciar</span>
     <span>La barra parte el día de inicio y termina el día de término. ‹ › indica que el proyecto sigue en otra semana.</span>
   </div>`;
@@ -362,7 +386,7 @@ function tarjetas(){
 
 function fichaProyecto(p,a,b){
   const st = estado(p), t = pctTotal(p);
-  const col = st.k==="bad" ? "var(--bad)" : st.k==="ok" ? "var(--ok)" : st.k==="idle" ? "#8fa3b5" : "var(--brand)";
+  const col = COLOR[st.k];
   const sig = p.checklist.etapas.find(e => pctEtapa(p,e) < 100);
   const f = a ? faseSemana(p,a,b) : null;
   return `<div class="card pcard" style="border-left-color:${col}" onclick="abrir('${p.id}')">
@@ -374,7 +398,7 @@ function fichaProyecto(p,a,b){
     <div class="cl">${esc(p.cliente)} · ${esc(p.comuna)}</div>
     <span class="tag">${esc(p.tipo)}</span>${p.linea?`<span class="tag">${esc(p.linea)}</span>`:''}${f?`<span class="fase ${f.c}">${f.t}</span>`:''}
     <div style="margin-top:13px"><div class="bar"><b style="width:${t}%;background:${col}"></b></div>
-    <div class="pct">${t}% · ${sig?`Etapa ${sig.n}: ${esc(sig.t)}`:"Checklist cerrado"}</div></div>
+    <div class="pct">${t}% · ${sig?`Etapa ${sig.n}: ${esc(sig.t)}`:p.completadoTs?`Completado el ${fdate(ymd(new Date(p.completadoTs)))}`:"Falta generar el acta"}</div></div>
     <div class="foot"><span>${fdate(p.inicio)} – ${fdate(p.termino)}</span><span><span class="dot s-${st.k}"></span>${st.txt}</span></div>
   </div>`;
 }
@@ -382,27 +406,88 @@ function fichaProyecto(p,a,b){
 /* ---------- DASHBOARD (Jefatura, y consulta del coordinador) ---------- */
 function vistaJefatura(){
   const H = hoy();
+  /* indicadores: toda la cartera activa, no solo el mes visible */
+  const cartera = activos(), trabajo = enTrabajo();
+  const enCurso = trabajo.filter(p => pctTotal(p) < 100);
+  const atrasados = enCurso.filter(p => estado(p).k === "bad");
+  const actasPend = trabajo.filter(p => pctTotal(p) === 100);
+  const compl = completados();
+  const complMes = compl.filter(p => p.completadoTs.slice(0,7) === `${H.getFullYear()}-${String(H.getMonth()+1).padStart(2,"0")}`).length;
+  const al = alertas(trabajo);
+  const etapas = tiemposPorEtapa(cartera);
+  const inst = resumenInstaladores(cartera);
   const lista = proyectosDelMes();
-  const al = alertas(lista), act = lista.filter(p => pctTotal(p) < 100);
-  const prom = lista.length ? Math.round(lista.reduce((a,p) => a + pctTotal(p), 0) / lista.length) : 0;
-  const pend = lista.reduce((a,p) => a + itemsDe(p).filter(i => !p.av[i.id]?.ok && i.ev === "obligatoria").length, 0);
+
   app.innerHTML = `
   <div class="ph"><div>
     <h1>Dashboard</h1>
-    <p class="sub" style="margin:0">Avance en tiempo real de la coordinación de proyectos · hoy es ${H.toLocaleDateString("es-CL",{weekday:"long",day:"numeric",month:"long",year:"numeric"})}</p>
+    <p class="sub" style="margin:0">Indicadores de toda la cartera · hoy es ${H.toLocaleDateString("es-CL",{weekday:"long",day:"numeric",month:"long",year:"numeric"})}</p>
   </div><button class="btn p" onclick="nuevoProyecto()">+ Crear proyecto</button></div>
+  <div class="kpis">
+    <div class="card kpi"><div class="l">En curso</div><div class="v">${enCurso.length}</div><div class="d">checklist bajo el 100%</div></div>
+    <div class="card kpi"><div class="l">Atrasados</div><div class="v" style="color:${atrasados.length?'var(--bad)':'var(--ok)'}">${atrasados.length}</div><div class="d">con alguna etapa vencida</div></div>
+    <div class="card kpi"><div class="l">Actas pendientes</div><div class="v" style="color:${actasPend.length?'var(--ready)':'inherit'}">${actasPend.length}</div><div class="d">al 100%, falta generar el acta</div></div>
+    <div class="card kpi"><div class="l">Completados</div><div class="v" style="color:var(--ok)">${compl.length}</div><div class="d">${complMes} este mes · ${cartera.length} en cartera</div></div>
+  </div>
+
+  <div class="dgrid">
+    <div class="card">
+      <div class="hd">Actas pendientes <span class="n">${actasPend.length}</span></div>
+      ${actasPend.length ? actasPend.map(p => `<div class="alrow" onclick="abrir('${p.id}')">
+          <div class="ic ic-ready">✓</div>
+          <div><b>${esc(p.nombre)}</b><small>${esc(p.cliente)} · Coord. ${esc(p.coord)} · término ${fdate(p.termino)}</small></div></div>`).join("")
+        : `<div class="alrow" style="color:var(--muted);cursor:default">No hay actas pendientes.</div>`}
+    </div>
+    <div class="card">
+      <div class="hd">Alertas de etapas <span class="n">${al.length}</span></div>
+      ${al.length ? al.slice(0,8).map(a => `<div class="alrow" onclick="abrir('${a.p.id}',${a.e.n})">
+          <div class="ic ic-${a.sev}">!</div>
+          <div><b>${esc(a.p.nombre)}</b> — ${a.txt}
+          <small>${esc(a.e.t)} · ${a.pc}% · límite ${limite(a.p,a.e.n).toLocaleDateString("es-CL",{day:"2-digit",month:"short"})}</small></div></div>`).join("")
+        + (al.length > 8 ? `<div class="alrow" style="color:var(--muted);cursor:default">y ${al.length-8} alerta(s) más</div>` : "")
+        : `<div class="alrow" style="color:var(--muted);cursor:default">Todas las etapas están al día.</div>`}
+    </div>
+  </div>
+
+  <div class="card" style="margin-top:20px">
+    <div class="hd">Tiempos por etapa <span class="n">${cartera.length} proyectos</span></div>
+    ${etapas.length ? `<div class="tablewrap"><table><thead><tr>
+      <th>Etapa</th><th>Cerradas</th><th>Duración promedio</th><th>Cierre vs. límite</th><th>A tiempo</th>
+    </tr></thead><tbody>
+    ${etapas.map(r => `<tr class="nohover">
+      <td><b>${r.n}.</b> ${esc(r.t)}</td>
+      <td>${r.cerradas}</td>
+      <td>${r.duracion == null ? "—" : `${fmtNum(r.duracion)} día${Math.round(r.duracion*10)===10?'':'s'}`}</td>
+      <td>${fmtAtraso(r.atraso)}</td>
+      <td style="min-width:110px"><div class="bar"><b style="width:${r.aTiempo}%;background:${r.aTiempo>=80?'var(--ok)':r.aTiempo>=50?'var(--warn)':'var(--bad)'}"></b></div><div class="pct">${r.aTiempo}%</div></td>
+    </tr>`).join("")}
+    </tbody></table></div>
+    <div class="pmeta" style="padding:10px 15px">Duración: días desde que se cerró la etapa anterior (la etapa 1, desde el primer registro del proyecto). Cierre vs. límite: días antes (−) o después (+) de la fecha límite de la etapa.</div>`
+      : `<div class="empty">Todavía no hay etapas cerradas para medir.</div>`}
+  </div>
+
+  <div class="card" style="margin-top:20px">
+    <div class="hd">Por instalador <span class="n">${inst.length}</span></div>
+    ${inst.length ? `<div class="tablewrap"><table><thead><tr>
+      <th>Instalador</th><th>En curso</th><th>Atrasados</th><th>Terminados</th><th>Término (etapa 5) vs. límite</th>
+    </tr></thead><tbody>
+    ${inst.map(r => `<tr class="nohover">
+      <td class="pname">${esc(r.inst)}</td>
+      <td>${r.enCurso}</td>
+      <td>${r.atrasados ? `<span style="color:var(--bad);font-weight:700">${r.atrasados}</span>` : "0"}</td>
+      <td>${r.terminados}</td>
+      <td>${fmtAtraso(r.atraso5)}</td>
+    </tr>`).join("")}
+    </tbody></table></div>` : `<div class="empty">Sin proyectos.</div>`}
+  </div>
+
+  <h2 class="sec">Cartera por mes</h2>
+  <div class="calbar">${filtroTrabajo()}</div>
   ${barraMes(`
     <div class="resumen"><span class="cnt ${lista.length?'':'vacio'}">${lista.length
       ? `<b>${lista.length}</b> proyecto${lista.length===1?'':'s'} en ${MESES[S.mes.m]}`
       : `Sin proyectos en ${MESES[S.mes.m]} ${S.mes.y}`}</span></div>`)}
-  <div class="kpis">
-    <div class="card kpi"><div class="l">Proyectos activos</div><div class="v">${act.length}</div><div class="d">de ${lista.length} en el mes · ${activos().length} en cartera</div></div>
-    <div class="card kpi"><div class="l">Avance promedio</div><div class="v">${prom}%</div><div class="d">checklist completado</div></div>
-    <div class="card kpi"><div class="l">Alertas</div><div class="v" style="color:${al.length?'var(--bad)':'var(--ok)'}">${al.length}</div><div class="d">etapas vencidas o por vencer</div></div>
-    <div class="card kpi"><div class="l">Evidencias pendientes</div><div class="v">${pend}</div><div class="d">ítems críticos sin adjuntar</div></div>
-  </div>
   <div class="card">
-    <div class="hd">Cartera de ${MESES[S.mes.m]} ${S.mes.y} <span class="n">${lista.length}</span></div>
     ${lista.length ? `<div class="tablewrap"><table><thead><tr>
       <th>Proyecto</th><th>Tipo</th><th class="hideM">Fechas</th><th>Etapas 1 › 6</th><th>Avance</th><th>Estado</th>
     </tr></thead><tbody>
@@ -415,16 +500,20 @@ function vistaJefatura(){
       <td style="min-width:110px"><div class="bar"><b style="width:${pctTotal(p)}%"></b></div><div class="pct">${pctTotal(p)}%</div></td>
       <td><span class="dot s-${st.k}"></span>${st.txt}</td>
     </tr>`;}).join("")}
-    </tbody></table></div>` : `<div class="empty">No hay proyectos programados en este mes.</div>`}
-  </div>
-  <div class="card alerts">
-    <div class="hd">Alertas de coordinación <span class="n">${al.length}</span></div>
-    ${al.length ? al.map(a => `<div class="alrow" onclick="abrir('${a.p.id}',${a.e.n})">
-        <div class="ic ic-${a.sev}">!</div>
-        <div><b>${esc(a.p.nombre)}</b> — ${a.txt}
-        <small>${esc(a.e.t)} · ${a.pc}% completada · límite ${limite(a.p,a.e.n).toLocaleDateString("es-CL",{day:"2-digit",month:"short"})}</small></div></div>`).join("")
-      : `<div class="alrow" style="color:var(--muted);cursor:default">Sin alertas en ${MESES[S.mes.m]}. Todas las etapas están al día.</div>`}
+    </tbody></table></div>` : `<div class="empty">No hay proyectos ${S.filtro==='completados'?'completados':'en trabajo'} en este mes.</div>`}
   </div>`;
+}
+
+/* número con un decimal, coma decimal (es-CL) */
+const fmtNum = x => (Math.round(x*10)/10).toLocaleString("es-CL", {maximumFractionDigits:1});
+/* días antes (−, verde) o después (+, rojo) de la fecha límite */
+function fmtAtraso(x){
+  if(x == null) return "—";
+  const r = Math.round(x*10)/10;
+  if(r === 0) return `<span style="color:var(--ok);font-weight:700">en el límite</span>`;
+  return r > 0
+    ? `<span style="color:var(--bad);font-weight:700">+${fmtNum(r)} días</span>`
+    : `<span style="color:var(--ok);font-weight:700">${fmtNum(-r)} días antes</span>`;
 }
 
 /* ---------- DETALLE DE PROYECTO ---------- */
@@ -451,11 +540,15 @@ function vistaDetalle(){
         <button class="evbtn" style="flex:1" onclick="editarProyecto('${p.id}')">✎ Editar</button>
         <button class="evbtn del" style="flex:1" onclick="confirmarEliminar('${p.id}')">🗑 Eliminar</button></div>
     </div>
+    <div class="steps">${p.checklist.etapas.map(e => { const v = pctEtapa(p,e), venc = limite(p,e.n) < H && v < 100;
+      return `<button class="step ${v===100?'done':venc?'late':''} ${abierta===e.n?'cur':''}" onclick="irEtapa(${e.n})" title="${esc(e.t)}">
+        <span class="sn">${v===100?'✓':e.n}</span><span class="sb"><b style="width:${v}%"></b></span><span class="sp">${v}%</span></button>`; }).join("")}
+    </div>
   </div>
   ${p.checklist.etapas.map(e => {
     const list = e.items, v = pctEtapa(p,e), lim = limite(p,e.n);
     const vencida = lim < H && v < 100;
-    return `<div class="card stage ${abierta===e.n?'open':''}">
+    return `<div class="card stage ${abierta===e.n?'open':''}" id="etapa-${e.n}">
       <div class="sthead" onclick="toggleEtapa(${e.n})">
         <div class="stn ${v===100?'done':(abierta===e.n?'act':'')}">${v===100?'✓':e.n}</div>
         <div class="sttl"><b>${e.n}. ${esc(e.t)}</b>
@@ -469,7 +562,7 @@ function vistaDetalle(){
   <div style="display:flex;justify-content:space-between;align-items:center;margin-top:18px;gap:12px;flex-wrap:wrap">
     <span class="pmeta">${ro ? "Jefatura tiene lectura sobre el checklist; los registros en terreno los hace el Coordinador." : ""}</span>
     <button class="btn ${t===100?'p':'g'}" onclick="verActa()" ${t===100?'':'disabled'}>
-      ${t===100?'Generar acta de recepción':'Acta disponible al 100%'}</button>
+      ${t===100?(p.completadoTs?'Ver acta de recepción':'Generar acta de recepción'):'Acta disponible al 100%'}</button>
   </div>
   <div class="card alerts">
     <div class="hd">Actividad y auditoría del proyecto <span class="n">${S.auditProy.length}</span></div>
@@ -477,7 +570,8 @@ function vistaDetalle(){
       <div class="audrow"><span class="at">${fts(a.ts)}</span>
         <span><b>${esc(a.user)}</b> · ${esc(etiquetaAccion(a.accion))}${a.detalle?` — ${esc(a.detalle)}`:""}</span></div>`).join("")
       : `<div class="audrow" style="color:var(--muted)">Sin actividad registrada aún.</div>`}
-  </div>`;
+  </div>
+  ${barraSiguiente(p, ro)}`;
 }
 
 function filaItem(p,i,ro){
@@ -526,6 +620,31 @@ function etiquetaAccion(a){
   })[a] || a;
 }
 
+/* barra fija abajo: el siguiente ítem pendiente, o generar el acta al 100% */
+function barraSiguiente(p, ro){
+  const sig = siguientePendiente(p);
+  if(sig && !ro){
+    const libre = sig.it.ev !== "obligatoria";
+    return `<div class="nextspace"></div><div class="nextbar"><div class="nbin">
+      <div class="nbtx"><small>Siguiente · Etapa ${sig.e.n}</small><span><b>${esc(sig.it.id)}</b> ${esc(sig.it.x)}</span></div>
+      ${libre
+        ? `<button class="btn g nbb" onclick="abrirDetalleOpcional('${sig.it.id}')">＋ Foto</button>
+           <button class="btn p nbb" onclick="toggleLibre('${sig.it.id}')">✓ Marcar</button>`
+        : `<button class="btn p nbb" onclick="toggle('${sig.it.id}')">📷 Registrar</button>`}
+    </div></div>`;
+  }
+  if(!sig && !p.completadoTs){
+    return `<div class="nextspace"></div><div class="nextbar"><div class="nbin">
+      <div class="nbtx"><small>Checklist al 100%</small><span>Falta generar el acta de recepción</span></div>
+      <button class="btn p nbb" onclick="verActa()">Generar acta</button>
+    </div></div>`;
+  }
+  return "";
+}
+function irEtapa(n){
+  S.openSt = n; render();
+  document.getElementById(`etapa-${n}`)?.scrollIntoView({behavior:"smooth", block:"start"});
+}
 function toggleEtapa(n){
   const p = S.proyectos.find(x => x.id === S.abierto);
   const auto = (p.checklist.etapas.find(e => pctEtapa(p,e) < 100) || {n:6}).n;

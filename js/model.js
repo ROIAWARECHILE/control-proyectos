@@ -34,6 +34,7 @@ const S = {
   sesion: null,          // {userId, nombre, rol}
   panel: "proyectos",    // coordinador: "proyectos" | "dashboard"
   vista: "sem",          // "sem" | "cal" | "list"
+  filtro: "trabajo",     // "trabajo" (todo lo no completado) | "completados"
   pantalla: null,        // null | "archivados" | "acta"
   abierto: null,         // id del proyecto en detalle
   openSt: undefined,     // etapa abierta (undefined = automática, null = todas cerradas)
@@ -57,7 +58,7 @@ const uid  = pref => pref + Date.now().toString(36) + Math.random().toString(36)
 
 const MESES = ["enero","febrero","marzo","abril","mayo","junio","julio","agosto","septiembre","octubre","noviembre","diciembre"];
 const DOW   = ["Lun","Mar","Mié","Jue","Vie","Sáb","Dom"];
-const COLOR = {ok:"#1a9e63", bad:"#d8453c", warn:"#0f6fb8", idle:"#8fa3b5"};
+const COLOR = {ok:"#1a9e63", ready:"#7a55c9", bad:"#d8453c", warn:"#0f6fb8", idle:"#8fa3b5"};
 const MAXLANE = 3;   // RN-11: hasta 3 proyectos simultáneos por día
 
 /* ---------- checklist por proyecto ----------
@@ -107,7 +108,7 @@ function limite(p,n){
 function estado(p){
   const t = pctTotal(p), H = hoy();
   const atras = p.checklist.etapas.some(e => limite(p,e.n) < H && pctEtapa(p,e) < 100);
-  if(t === 100) return {k:"ok",  txt: p.completadoTs ? "Completado" : "Listo para acta"};
+  if(t === 100) return p.completadoTs ? {k:"ok", txt:"Completado"} : {k:"ready", txt:"Listo para acta"};
   if(atras)     return {k:"bad", txt:"Atrasado"};
   if(d(p.inicio) > H && t === 0) return {k:"idle", txt:"Por iniciar"};
   return {k:"warn", txt:"En curso"};
@@ -127,10 +128,81 @@ function alertas(lista){
 
 /* ---------- calendario ---------- */
 const activos = () => S.proyectos.filter(p => !p.archivado);
+/* Completado = checklist al 100% y acta generada. Los "Listo para acta"
+   siguen en la vista de trabajo: todavía falta generar el acta. */
+const esCompletado = p => !!p.completadoTs && pctTotal(p) === 100;
+const enTrabajo    = () => activos().filter(p => !esCompletado(p));
+const completados  = () => activos().filter(esCompletado)
+  .sort((a,b) => b.completadoTs.localeCompare(a.completadoTs));
+const visibles     = () => S.filtro === "completados" ? completados() : enTrabajo();
 
 function proyectosDelMes(){
   const a = ymd(new Date(S.mes.y, S.mes.m, 1)), b = ymd(new Date(S.mes.y, S.mes.m + 1, 0));
-  return activos().filter(p => p.inicio <= b && p.termino >= a);
+  return visibles().filter(p => p.inicio <= b && p.termino >= a);
+}
+
+/* siguiente ítem pendiente: el primero sin cerrar, en orden de etapa */
+function siguientePendiente(p){
+  for(const e of p.checklist.etapas){
+    const it = e.items.find(i => !p.av[i.id]?.ok);
+    if(it) return {e, it};
+  }
+  return null;
+}
+
+/* ---------- indicadores de Jefatura (toda la cartera, no solo el mes) ---------- */
+const diasEntre = (a, b) => Math.round((b - a) / 864e5);
+const fechaLocal = ts => d(ymd(new Date(ts)));
+
+/* fecha en que se cerró la etapa (último ítem cerrado), o null si no está completa */
+function cierreEtapa(p, e){
+  if(!e.items.length || pctEtapa(p,e) < 100) return null;
+  return fechaLocal(e.items.map(i => p.av[i.id].ts).sort().pop());
+}
+
+/* Por etapa: duración promedio (desde el cierre de la etapa anterior, o desde
+   el primer registro del proyecto para la etapa 1), atraso promedio contra
+   su fecha límite (RN-5) y % de etapas cerradas a tiempo. */
+function tiemposPorEtapa(lista){
+  const acc = new Map();
+  lista.forEach(p => {
+    const primero = Object.values(p.av).map(a => a.ts).sort()[0];
+    let anterior = primero ? fechaLocal(primero) : null;
+    p.checklist.etapas.forEach(e => {
+      const c = cierreEtapa(p, e);
+      if(!c){ anterior = null; return; }
+      const r = acc.get(e.n) || {n:e.n, t:e.t, dur:[], atraso:[]};
+      if(anterior) r.dur.push(Math.max(0, diasEntre(anterior, c)));
+      r.atraso.push(diasEntre(limite(p, e.n), c));
+      acc.set(e.n, r);
+      anterior = c;
+    });
+  });
+  const prom = l => l.length ? l.reduce((a,b) => a+b, 0) / l.length : null;
+  return [...acc.values()].sort((a,b) => a.n - b.n).map(r => ({
+    n: r.n, t: r.t, cerradas: r.atraso.length,
+    duracion: prom(r.dur), atraso: prom(r.atraso),
+    aTiempo: Math.round(r.atraso.filter(x => x <= 0).length / r.atraso.length * 100),
+  }));
+}
+
+/* Por instalador: proyectos en curso, atrasados hoy, completados y atraso
+   promedio de la etapa 5 (término con instalador) contra su límite. */
+function resumenInstaladores(lista){
+  const acc = new Map();
+  lista.forEach(p => {
+    const k = p.inst || "Por asignar";
+    const r = acc.get(k) || {inst:k, enCurso:0, atrasados:0, terminados:0, atraso5:[]};
+    const st = estado(p);
+    if(pctTotal(p) === 100) r.terminados++;
+    else { r.enCurso++; if(st.k === "bad") r.atrasados++; }
+    const e5 = p.checklist.etapas.find(e => e.n === 5), c5 = e5 && cierreEtapa(p, e5);
+    if(c5) r.atraso5.push(diasEntre(limite(p, 5), c5));
+    acc.set(k, r);
+  });
+  return [...acc.values()].map(r => ({...r,
+    atraso5: r.atraso5.length ? r.atraso5.reduce((a,b) => a+b, 0) / r.atraso5.length : null,
+  })).sort((a,b) => b.atrasados - a.atrasados || b.enCurso - a.enCurso || a.inst.localeCompare(b.inst));
 }
 
 function semanasDe(y,m){
@@ -147,7 +219,7 @@ function semanasDe(y,m){
 /* RN-11: asigna carriles a los proyectos que cruzan la semana */
 function carriles(wk){
   const a = ymd(wk[0]), b = ymd(wk[6]);
-  const segs = activos().filter(p => p.inicio <= b && p.termino >= a)
+  const segs = visibles().filter(p => p.inicio <= b && p.termino >= a)
     .sort((x,y) => x.inicio.localeCompare(y.inicio) || x.termino.localeCompare(y.termino))
     .map(p => {
       let s = wk.findIndex(dd => ymd(dd) >= p.inicio); if(s < 0) s = 0;

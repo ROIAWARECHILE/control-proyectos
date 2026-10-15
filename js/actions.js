@@ -247,7 +247,7 @@ function toggle(itemId){
     <span class="lab">Evidencia (${it.ev === "obligatoria" ? "obligatoria" : "opcional"})</span>
     ${it.ev === "obligatoria" ? `<div class="warnbox" style="background:#fff4dd">Sin evidencia adjunta no se puede cerrar este ítem (RN-1).</div>` : ""}
     <div class="filebtns">
-      <button onclick="document.getElementById('fileCam').click()">📷 Tomar foto</button>
+      <button class="cam" onclick="document.getElementById('fileCam').click()">📷 Tomar foto</button>
       <button onclick="document.getElementById('fileGal').click()">🖼 Desde galería</button>
     </div>
     <div class="drop" id="drop">Aún no hay evidencia adjunta<br><small>Foto o pantallazo: captura del grupo de WhatsApp, foto del avance o del documento firmado</small></div>
@@ -276,20 +276,32 @@ function conectarEntradasArchivo(){
   }
 }
 
-/* reduce la imagen a un tamaño razonable antes de guardarla */
+/* Comprime la evidencia para que ocupe lo mínimo en el almacenamiento (el
+   plan gratuito de Supabase trae 1 GB): lado mayor de 1280 px, y se prueba
+   WebP y JPEG a calidad 0,6 quedándose con el más liviano. Sigue siendo
+   legible como evidencia (fotos de obra, documentos firmados, pantallazos).
+   Safari antiguo no codifica WebP y devuelve PNG: por eso se compara el
+   tipo real de cada resultado y nunca se elige un PNG. */
+const FOTO_MAX = 1280, FOTO_CALIDAD = .6;
 async function comprimirImagen(file){
   const url = URL.createObjectURL(file);
   try{
     const img = await new Promise((res, rej) => {
       const i = new Image(); i.onload = () => res(i); i.onerror = rej; i.src = url;
     });
-    const MAX = 1600;
     let w = img.naturalWidth, h = img.naturalHeight;
-    if(Math.max(w,h) > MAX){ const f = MAX / Math.max(w,h); w = Math.round(w*f); h = Math.round(h*f); }
+    if(Math.max(w,h) > FOTO_MAX){ const f = FOTO_MAX / Math.max(w,h); w = Math.round(w*f); h = Math.round(h*f); }
     const cv = document.createElement("canvas"); cv.width = w; cv.height = h;
-    cv.getContext("2d").drawImage(img, 0, 0, w, h);
-    const blob = await new Promise(r => cv.toBlob(r, "image/jpeg", .82));
-    return blob || file;
+    const ctx = cv.getContext("2d");
+    ctx.fillStyle = "#fff"; ctx.fillRect(0, 0, w, h);   // fondo blanco: un PNG transparente no queda negro en JPEG
+    ctx.drawImage(img, 0, 0, w, h);
+    const enc = tipo => new Promise(r => cv.toBlob(r, tipo, FOTO_CALIDAD));
+    const candidatos = (await Promise.all([enc("image/webp"), enc("image/jpeg")]))
+      .filter(b => b && (b.type === "image/webp" || b.type === "image/jpeg"));
+    // si el original ya es liviano y no hubo que achicarlo, se deja tal cual
+    if((file.type === "image/jpeg" || file.type === "image/webp") && w === img.naturalWidth) candidatos.push(file);
+    if(!candidatos.length) return file;
+    return candidatos.reduce((a, b) => b.size < a.size ? b : a);
   }finally{ URL.revokeObjectURL(url); }
 }
 
@@ -426,7 +438,7 @@ function abrirDetalleOpcional(itemId){
     ${prev ? `<div class="warnbox">Hay etapas anteriores incompletas. Puedes continuar, pero quedará constancia en la auditoría (RN-4).</div>` : ''}
     <span class="lab">Evidencia (opcional)</span>
     <div class="filebtns">
-      <button onclick="document.getElementById('fileCam').click()">📷 Tomar foto</button>
+      <button class="cam" onclick="document.getElementById('fileCam').click()">📷 Tomar foto</button>
       <button onclick="document.getElementById('fileGal').click()">🖼 Desde galería</button>
     </div>
     <div class="drop" id="drop">Aún no hay evidencia adjunta<br><small>Foto o pantallazo (opcional)</small></div>
